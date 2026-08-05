@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=78", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pancreas-multitask"
+version = "0.1.0"
+description = "Multi-task 3D nnU-Net ResEnc-M for pancreas segmentation and subtype classification"
+requires-python = ">=3.10,<3.13"
+authors = [
+  {name = "Amirfaham Fallahpour"},
+]
+license = {text = "Apache-2.0"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+

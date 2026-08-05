@@ -1,0 +1,48 @@
+# Original quiz data (must never be published)
+/ML-Quiz-3DMedImg/
+*.nii
+*.nii.gz
+
+# Python environments and caches
+/.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+/.tmp/
+
+# Experiment outputs and credentials
+/artifacts/
+/outputs/
+/wandb/
+/.env
+*.pth
+*.pt
+*.ckpt
+*.npz
+*.pkl
+
+# Local editor and OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+/collab.ipynb
+
+# Generated report files
+/report/build/
+/report/Amirfaham_Fallahpour_results.pdf
+/Amirfaham_Fallahpour_results.pdf
+/report/figures/qualitative_cases.pdf
+/report/figures/qualitative_cases.png
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc

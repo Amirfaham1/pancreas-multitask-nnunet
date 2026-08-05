@@ -1,0 +1,50 @@
+project:
+  candidate: Amirfaham Fallahpour
+  wandb_project: pancreas-multitask-amirfaham-fallahpour
+
+data:
+  dataset_id: 501
+  dataset_name: Dataset501_PancreasMultitask
+  configuration: 3d_fullres
+  plans: nnUNetResEncUNetMPlans
+  fold: 0
+  supplied_train_cases: 252
+  supplied_validation_cases: 36
+  test_cases: 72
+
+model:
+  backbone: nnUNetv2 ResEnc M
+  classification_classes: 3
+  classification_head: hybrid_global_average_and_query_attention
+  classification_hidden_features: 128
+  classification_dropout: 0.30
+
+training:
+  epochs: 200
+  iterations_per_epoch: 125
+  validation_iterations_per_epoch: 30
+  segmentation_loss: nnUNet_Dice_plus_CE_with_deep_supervision
+  classification_loss: weighted_cross_entropy
+  classification_loss_weight: 0.50
+  classification_label_smoothing: 0.05
+  class_weights: [1.35483871, 0.79245283, 1.0]
+  lesion_patch_weight: 1.0
+  nonlesion_patch_weight: 0.25
+  foreground_oversample_fraction: 0.50
+  split_seed: 12345
+  deterministic_training: false
+
+evaluation:
+  checkpoint_candidates:
+    - checkpoint_best.pth
+    - checkpoint_best_multitask.pth
+    - checkpoint_final.pth
+  checkpoint_selection: maximize_equal_weight_mean_of_three_primary_validation_metrics
+  checkpoint_selection_metrics:
+    - whole_pancreas_dice
+    - lesion_dice
+    - classification_macro_f1
+  whole_pancreas_definition: prediction_gt_0
+  lesion_definition: prediction_eq_2
+  classification_primary_metric: macro_f1
+  empty_empty_dice: 1.0

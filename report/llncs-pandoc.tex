@@ -1,0 +1,66 @@
+\documentclass[runningheads]{llncs}
+
+% Tectonic uses XeTeX. Loading T1 fontenc there can trigger a needless
+% network fetch for EC font metrics, so reserve it for pdfTeX builds.
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+\fi
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,longtable,array,calc,multirow}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{url}
+\usepackage{fancyvrb}
+\usepackage{framed}
+\usepackage{float}
+\usepackage[pagebackref=false,breaklinks=true,colorlinks=true,
+  linkcolor=blue!55!black,citecolor=blue!55!black,urlcolor=blue!55!black]{hyperref}
+
+% report.md carries its own section numbers. Suppress LaTeX's automatic
+% numbers so headings never render as, for example, "2 1. Introduction".
+\setcounter{secnumdepth}{-1}
+\setlength{\emergencystretch}{3em}
+\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>0.82\textheight 0.82\textheight\else\Gin@nat@height\fi}
+\makeatother
+\providecommand{\pandocbounded}[1]{#1}
+\newcommand{\passthrough}[1]{#1}
+\renewcommand{\UrlFont}{\ttfamily\small}
+
+$if(highlighting-macros)$
+$highlighting-macros$
+$endif$
+$for(header-includes)$
+$header-includes$
+$endfor$
+
+\begin{document}
+
+\title{$title$}
+\titlerunning{$if(title-running)$$title-running$$else$Multi-Task Pancreas CT Analysis$endif$}
+\author{$for(author)$$author$$sep$ \and $endfor$}
+\authorrunning{$if(author-running)$$author-running$$else$A. Fallahpour$endif$}
+\institute{$if(institute)$$institute$$else$University of Toronto Scarborough, Toronto, Canada$endif$}
+\hypersetup{
+  pdftitle={$title$},
+  pdfauthor={$if(author-meta)$$author-meta$$else$Amirfaham Fallahpour$endif$}
+}
+\maketitle
+
+$if(abstract)$
+\begin{abstract}
+$abstract$
+
+$if(keywords)$
+\keywords{$for(keywords)$$keywords$$sep$ \and $endfor$}
+$endif$
+\end{abstract}
+$endif$
+
+$body$
+
+\end{document}
