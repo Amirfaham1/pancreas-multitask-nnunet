@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "lock_status": "frozen_before_deterministic_conformance_implementation_completion_or_deterministic_raw_volume_timing",
+  "locked_at_utc": "2026-08-06T15:42:30.7204305Z",
+  "scope": "symmetric_execution_determinism_repair_for_v3_and_stock_speed_arms",
+  "bound_protocols": {
+    "dependency_pruning_lock": {
+      "path": "configs/inference_speed_benchmark_v3.json",
+      "sha256": "3a57ab79147a6dd9ab4ee3fa99fdb2be978e9c60f290cead7a52298673e926aa"
+    },
+    "stock_gate_lock": {
+      "path": "configs/inference_speed_stock_gate_v1.json",
+      "sha256": "563d9d5e4fbe0f92653c6b7295c476d0ddf5d239c47beb1948410bbb80a7c2e2"
+    }
+  },
+  "triggering_train_only_evidence": {
+    "input_scope": "two supplied training images only: one one-tile case and one twelve-tile case",
+    "ground_truth_masks_or_official_validation_or_test_data_used": false,
+    "full_vs_neural_only_mask_differences": {
+      "quiz_0_041": {
+        "different_voxels": 3,
+        "total_voxels": 1979656
+      },
+      "quiz_2_200": {
+        "different_voxels": 10,
+        "total_voxels": 4583301
+      }
+    },
+    "stock_vs_full_mask_differences": {
+      "quiz_0_041": 6,
+      "quiz_2_200": 14
+    },
+    "full_vs_neural_only_subtype_decisions_equal": true,
+    "full_vs_neural_only_maximum_absolute_probability_delta": 7.911126446158434e-7,
+    "full_vs_neural_only_neural_bag_hashes_equal": false,
+    "original_exact_equivalence_gate_passed": false,
+    "interpretation": "Tiny boundary and feature differences across fresh processes are incompatible with the exact predeclared gates even though decisions and probability tolerance passed."
+  },
+  "root_cause_evidence": {
+    "installed_package": "nnunetv2 2.8.1",
+    "installed_source": "nnunetv2/inference/predict_from_raw_data.py",
+    "installed_source_sha256": "c350e3202a7a67c3aef12e9206a744add442110ff8a4377c1f9640104b20a31f",
+    "behavior": "NNUNetPredictor.__init__ sets torch.backends.cudnn.benchmark=True for CUDA after caller configuration.",
+    "source_must_remain_byte_identical": true
+  },
+  "repair_contract": {
+    "applies_identically_to": [
+      "full_v5_reference",
+      "dependency_pruned_neural_only_candidate",
+      "stock_nnunet_reference"
+    ],
+    "before_any_cuda_initialization": {
+      "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+      "torch_use_deterministic_algorithms": true,
+      "cudnn_benchmark": false,
+      "cudnn_deterministic": true,
+      "cuda_matmul_allow_tf32": false,
+      "cudnn_allow_tf32": false
+    },
+    "immediately_after_every_nnunet_predictor_construction": {
+      "reassert_cudnn_benchmark_false": true,
+      "reassert_cudnn_deterministic_true": true,
+      "reassert_tf32_false": true,
+      "verify_all_determinism_flags": true
+    },
+    "before_and_after_inference": {
+      "record_and_verify_determinism_provenance": true,
+      "installed_nnunet_source_hash_unchanged": true,
+      "checkpoint_plans_dataset_components_bundle_and_inputs_unchanged": true
+    },
+    "stock_execution": "Invoke the installed stock predict_entry_point through a transparent bootstrap that configures determinism and reasserts it after the stock constructor override; do not edit installed nnUNet source or change stock CLI arguments.",
+    "candidate_execution": "Configure before CUDA and reassert immediately after V5 predictor construction inside the shared inference entry point."
+  },
+  "prohibited_changes": [
+    "model_weights_or_architecture",
+    "feature_definitions_or_aggregation",
+    "neural_head_or_class_offsets",
+    "preprocessing_or_export_semantics",
+    "TTA_views_or_mirror_axes",
+    "tile_step_size",
+    "tile_or_TTA_batch_size",
+    "Gaussian_weighting",
+    "relaxation_of_exact_mask_or_neural_bag_equivalence"
+  ],
+  "validation_before_official_use": {
+    "unit_tests_for_pre_cuda_and_post_constructor_reassertion": true,
+    "fresh_process_full_vs_neural_only_on_the_same_two_train_only_cases": true,
+    "fresh_process_stock_vs_candidate_common_mask_equivalence_on_train_only_cases": true,
+    "exact_hard_masks_required": true,
+    "exact_neural_bag_hash_sequence_required_between_v3_arms": true,
+    "exact_subtype_decisions_required": true,
+    "maximum_absolute_probability_delta": 1e-6,
+    "official_validation_or_test_inputs_or_targets_allowed": false
+  },
+  "timing_policy": {
+    "all_final_speed_arms_must_use_this_identical_deterministic_policy": true,
+    "pre_repair_timings_are_diagnostic_only": true,
+    "performance_acceptance_thresholds_unchanged": true,
+    "no_official_or_test_timing_before_final_candidate_hash_lock": true
+  },
+  "claim_boundary": {
+    "repair_type": "post-lock_execution_conformance_repair",
+    "candidate_algorithm_changed": false,
+    "numerical_gate_relaxed": false,
+    "must_be_disclosed_in_report_and_final_manifest": true
+  }
+}
