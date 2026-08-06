@@ -61,10 +61,10 @@ from `checkpoint_final.pth`. This script reads only its saved
 `train_cls_losses` and `train_cls_accuracy`, computes both frozen audits, and
 binds the decision to the checkpoint SHA-256:
 
-Do **not** run the current three-candidate `Run-FinalEvaluation.ps1` before this
-gate. If rescue activates, finish it first and then evaluate all four candidates
-in one extended fixed-validation pass. If it does not activate, proceed with
-the original three-candidate workflow.
+Do **not** run `Run-FinalEvaluation.ps1` before this gate; the orchestrator now
+refuses a missing activation artifact. If rescue activates, finish it first and
+then evaluate all four candidates in one extended fixed-validation pass. If it
+does not activate, proceed with the original three-candidate workflow.
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass -Force
@@ -74,9 +74,29 @@ $python = "D:\MLQuizWork\.venv\Scripts\python.exe"
 & $python .\scripts\audit_classification_rescue_activation.py `
   --checkpoint (Join-Path $fold "checkpoint_final.pth") `
   --output (Join-Path $fold "classification_rescue_activation.json")
-
-.\scripts\Run-ClassificationRescue.ps1
 ```
+
+Read `activation_approved` from that artifact and take exactly one branch. A
+negative audit prohibits rescue and admits exactly the three original
+candidates. An affirmative audit requires the one frozen rescue to finish
+before all four candidates are evaluated together:
+
+```powershell
+$activationPath = Join-Path $fold "classification_rescue_activation.json"
+$activation = Get-Content -LiteralPath $activationPath -Raw | ConvertFrom-Json
+if ($activation.activation_approved) {
+  .\scripts\Run-ClassificationRescue.ps1
+  .\scripts\Run-FinalEvaluation.ps1 -IncludeClassificationRescue
+} else {
+  .\scripts\Run-FinalEvaluation.ps1
+}
+```
+
+Run only the one evaluation command reached by this branch. The orchestrator
+requires the activation artifact in both cases. It rejects
+`-IncludeClassificationRescue` after a negative decision; after an affirmative
+decision it refuses to evaluate anything without that switch and a completed,
+hash-bound rescue checkpoint and audit.
 
 The wrapper refuses a missing, negative, or hash-mismatched activation audit,
 refuses active production/rescue processes, forces W&B off, and runs in the
@@ -103,12 +123,13 @@ the rescue command; use it normally with `predict_joint.py` for inference.
 
 ## One allowed evaluation and final choice
 
-After all 3,750 updates finish, evaluate the original three checkpoints plus
-`checkpoint_classification_rescue.pth` exactly once under the same full-volume
-settings and frozen equal-mean selection score. Validation cannot activate,
-stop, extend, or restart rescue optimization. The encoder and decoder are
-bit-identical to `checkpoint_final.pth`, so segmentation logits should also be
-identical; verify this rather than assume it. Report all four results.
+After all 3,750 updates finish, the affirmative branch evaluates the original
+three checkpoints plus `checkpoint_classification_rescue.pth` exactly once
+under the same full-volume settings and frozen equal-mean selection score. The
+negative branch evaluates the original three exactly once. Validation cannot
+activate, stop, extend, or restart rescue optimization. The encoder and decoder
+are bit-identical to `checkpoint_final.pth`, so segmentation logits should also
+be identical; verify this rather than assume it. Report every admitted result.
 Training-patch diagnostics in the audit are not generalization metrics.
 
 ## Unresolved risks

@@ -230,8 +230,9 @@ D:\MLQuizWork\.venv\Scripts\python.exe .\scripts\evaluate_predictions.py `
   --output-json <validation-metrics.json> `
   --output-csv <validation-case-metrics.csv>
 
-# Repeat prediction/evaluation for all three declared candidates, then apply
-# the frozen equal-weight selection rule and hash each checkpoint.
+# Repeat prediction/evaluation for every candidate admitted by the mandatory
+# train-only activation audit (the original three, plus rescue only if approved),
+# then apply the frozen equal-weight selection rule and hash each checkpoint.
 D:\MLQuizWork\.venv\Scripts\python.exe .\scripts\select_checkpoint.py `
   --candidate checkpoint_best=<best-metrics.json> `
   --candidate checkpoint_best_multitask=<multitask-metrics.json> `
@@ -242,14 +243,34 @@ D:\MLQuizWork\.venv\Scripts\python.exe .\scripts\select_checkpoint.py `
   --output <checkpoint-selection.json>
 ```
 
-After all three checkpoints exist, the same frozen sequence can be run with
-one guarded command. It refuses to start while the production trainer is
-active, resumes complete prediction cases by default, and deliberately stops
-before test inference or ZIP creation:
+After `checkpoint_final.pth` exists, first create the mandatory activation
+artifact. Then take exactly one branch: a negative audit goes directly to the
+three-candidate pass, while an affirmative audit requires the completed rescue
+and the four-candidate switch. `Run-FinalEvaluation.ps1` rejects the wrong
+branch, verifies the relevant checkpoint/audit hashes before inference, refuses
+active production or rescue processes, resumes complete prediction cases by
+default, and deliberately stops before test inference or ZIP creation:
 
 ```powershell
-.\scripts\Run-FinalEvaluation.ps1
+$fold = "D:\MLQuizWork\nnUNet_results\Dataset501_PancreasMultitask\" +
+  "nnUNetTrainerPancreasMultiTask__nnUNetResEncUNetMPlans__3d_fullres\fold_0"
+$activationPath = Join-Path $fold "classification_rescue_activation.json"
+& D:\MLQuizWork\.venv\Scripts\python.exe `
+  .\scripts\audit_classification_rescue_activation.py `
+  --checkpoint (Join-Path $fold "checkpoint_final.pth") `
+  --output $activationPath
+
+$activation = Get-Content -LiteralPath $activationPath -Raw | ConvertFrom-Json
+if ($activation.activation_approved) {
+  .\scripts\Run-ClassificationRescue.ps1
+  .\scripts\Run-FinalEvaluation.ps1 -IncludeClassificationRescue
+} else {
+  .\scripts\Run-FinalEvaluation.ps1
+}
 ```
+
+Do not run both evaluation commands: either invocation performs the single
+equal-score selection pass over its complete three- or four-candidate set.
 
 The evaluator reports unweighted case-level mean/std and bootstrap confidence intervals for whole-pancreas Dice (`label > 0`) and lesion Dice (`label == 2`), plus a fixed three-class confusion matrix, per-class precision/recall/F1, accuracy, and macro-F1. Empty reference and prediction receives Dice 1; a one-sided empty set receives 0. Confusion-matrix rows are references and columns are predictions.
 
@@ -294,7 +315,7 @@ proposed tests, and supported debugging, experiment monitoring, evaluation,
 and packaging. Amirfaham Fallahpour defined the goal and quality bar, supplied
 access and compute, made consequential scope decisions, reviewed the work, and
 owns the final submission. AI outputs were treated as untrusted until checked
-with data audits, 74 automated tests, real CUDA smoke tests, saved
+with data audits, 96 automated tests, real CUDA smoke tests, saved
 configuration/checkpoint evidence, and human review; the final deliverables
 will additionally require clean archive validation before submission. See
 [docs/AI_WORKFLOW.md](docs/AI_WORKFLOW.md).

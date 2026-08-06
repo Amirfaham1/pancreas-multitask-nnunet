@@ -252,7 +252,7 @@ The trainer does not use automated early stopping. Training can be manually term
 
 ## Development checks before the long run
 
-High-risk contracts were tested before expensive training: case-ID-to-subtype mapping, inverse-frequency weights, macro-F1, patch-evidence weighting, attention-head compatibility, network tensor shapes, gradient flow into the shared encoder, segmentation-only compatibility, mirror/tile/fold classification aggregation, atomic GPU-to-CPU inference retry, categorical mask repair, fixed-split generation, evaluation conventions, report-figure generation, complete-checkpoint selection, and final archive structure. At the current report revision, all 72 repository tests pass; the four emitted warnings are deprecation warnings inside the third-party `batchgenerators` package rather than test failures. This count is rerun at the evaluated source commit.
+High-risk contracts were tested before expensive training: case-ID-to-subtype mapping, inverse-frequency weights, macro-F1, patch-evidence weighting, attention-head compatibility, network tensor shapes, gradient flow into the shared encoder, segmentation-only compatibility, mirror/tile/fold classification aggregation, atomic GPU-to-CPU inference retry, categorical mask repair, fixed-split generation, evaluation conventions, report-figure generation, complete-checkpoint selection, and final archive structure. At the current report revision, all 96 repository tests pass; the four emitted warnings are deprecation warnings inside the third-party `batchgenerators` package rather than test failures. This count is rerun at the evaluated source commit.
 
 A full planned-patch CUDA forward/backward smoke test used batch size 2 on the RTX 4060 Laptop GPU and completed within the 8 GB device budget. The production training log additionally confirms that a complete multi-task training/validation epoch finished without an out-of-memory failure.
 
@@ -273,9 +273,19 @@ The final W&B record must include:
 
 > **Figure 3 — PENDING_PERFORMANCE_CURVES.** Native label-1/lesion patch Dice, whole-pancreas and mean-foreground patch diagnostics, plus patch-aggregated macro-F1 and accuracy. These curves are monitoring diagnostics rather than final full-volume metrics.
 
+## Predeclared conditional classification-head rescue
+
+Online patch diagnostics had already indicated classification collapse before this contingency was specified; the rescue is therefore not presented as a blinded design choice. It was nevertheless prospectively frozen and committed before any restored full-volume prediction or evaluation on the fixed validation set. **Conditional status:** `PENDING_CLASSIFICATION_RESCUE_ACTIVATION`. Until the hash-bound train-only audit is complete, the rescue is only an opt-in contingency and no rescue execution or outcome is claimed.
+
+Activation is determined only from classification CE and training-patch accuracy saved in the completed joint run. For the ten-epoch window ending at epoch 40, activation requires all three predeclared conditions: mean training classification CE at least 1.05, mean training-patch accuracy at most 0.42, and an ordinary-least-squares CE slope at least $-0.001$ per epoch. If that rule is negative, the hard audit of the ten-epoch window ending at epoch 50 activates when either mean training CE is above 1.03 or mean training-patch accuracy is below 0.45. The audit is bound by SHA-256 to `checkpoint_final.pth`. If neither gate activates, later fixed-validation results cannot activate the rescue.
+
+Even if the gate activates at epoch 40 or 50, the original 200-epoch joint run must finish cleanly and `checkpoint_final.pth` remains the fixed initialization. One and only one head-only attempt is allowed: learned-query hybrid pooling and the classification MLP are reinitialized with seed 20260806, then optimized for exactly $30\times125=3{,}750$ training-patch updates at batch size 2. The fixed optimizer is AdamW with constant learning rate $3\times10^{-4}$, weight decay $10^{-4}$, and gradient-norm clipping at 1.0. It retains the original training augmentation, foreground oversampling, inverse-frequency class weights, label smoothing 0.05, and non-lesion patch weight 0.25. There is no hyperparameter search or second rescue attempt.
+
+This is not a second round of multi-task fine-tuning. Every encoder and decoder parameter is frozen, both modules remain in evaluation mode, the frozen encoder bottleneck is computed under `no_grad`, and the decoder forward path is bypassed. Exact component hashes before and after optimization verify that the encoder and decoder did not change. The rescue loader indexes only the 252 training keys; validation IDs are read only to verify cardinality and disjointness, while no validation image, label, batch, gradient, or stopping signal is consumed. Validation cannot activate, initialize, stop, extend, restart, or otherwise tune the rescue schedule.
+
 ## Checkpoint production and final selection
 
-Three checkpoint types are retained:
+The joint run retains three original checkpoint types:
 
 1. nnU-Net's stock `checkpoint_best.pth`, selected by exponential moving average of mean foreground patch Dice;
 2. `checkpoint_best_multitask.pth`, saved whenever
@@ -285,7 +295,9 @@ Three checkpoint types are retained:
    improves; and
 3. `checkpoint_final.pth`, representing the last completed epoch.
 
-The test set never influences checkpoint selection. Each candidate is evaluated with restored full-volume predictions on the fixed validation set, and the final score is predeclared as
+Checkpoint evaluation is deliberately a single three-or-four-candidate full-volume pass. If the train-only gate is negative, the three original checkpoints are each evaluated once. If the gate is affirmative and the single fixed rescue completes, `checkpoint_classification_rescue.pth` is added and all four candidates are each evaluated once under identical inference and evaluator settings. No preliminary full-volume fixed-validation pass occurs before the activation audit, and the candidate comparison cannot feed back into rescue optimization.
+
+The test set never influences checkpoint selection. Each eligible candidate is evaluated with restored full-volume predictions on the fixed validation set, and the final score is predeclared as
 
 $$
 S_{final}=\tfrac13(\overline{DSC}_{whole}+\overline{DSC}_{lesion}+Macro\text{-}F1).
@@ -425,7 +437,7 @@ Examples are selected by a reproducible rule after all 36 cases are scored, not 
 
 ## Training behavior and checkpoint choice
 
-The selected checkpoint occurred at epoch `PENDING_SELECTED_EPOCH`. Peak allocated/reserved VRAM was `PENDING_PEAK_VRAM`, and mean epoch duration after warm-up was `PENDING_EPOCH_TIME`. The loss and diagnostic curves show `PENDING_CONVERGENCE_AND_GAP_OBSERVATION`. The final choice follows the rule stated in Section 4.3 and the complete comparison below.
+The selected checkpoint occurred at epoch `PENDING_SELECTED_EPOCH`. Peak allocated/reserved VRAM was `PENDING_PEAK_VRAM`, and mean epoch duration after warm-up was `PENDING_EPOCH_TIME`. The loss and diagnostic curves show `PENDING_CONVERGENCE_AND_GAP_OBSERVATION`. The final choice follows the rule stated in Section 4.4 and the complete comparison below.
 
 | Checkpoint candidate | Epoch | Whole Dice | Lesion Dice | Macro-F1 | Equal-weight score | Selected? |
 |---|---:|---:|---:|---:|---:|---|
