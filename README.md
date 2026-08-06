@@ -7,6 +7,7 @@ This repository contains Amirfaham Fallahpour's implementation for a job take-ho
 ## Method at a glance
 
 - **Backbone:** nnU-Net v2.8.1 `ResidualEncoderUNet`, ResEnc M plan.
+- **Parameters:** 102,764,274 unique learned parameters (102,268,079 in the nnU-Net segmentation backbone and 496,195 in the classification path).
 - **Segmentation output:** background, pancreas (`1`), and lesion (`2`) through the native decoder with deep supervision during training.
 - **Classification output:** the 320-channel encoder bottleneck is summarized by global average pooling and learned-query multi-head cross-attention. Their concatenation passes through LayerNorm, a 128-unit GELU MLP, dropout 0.30, and three logits.
 - **Joint loss:** native nnU-Net Dice + cross-entropy segmentation loss plus `0.5 ×` class-weighted classification cross-entropy with label smoothing 0.05.
@@ -14,6 +15,8 @@ This repository contains Amirfaham Fallahpour's implementation for a job take-ho
 - **Inference:** explicit local aggregation across mirror views, spatial tiles, and folds. Segmentation logits follow nnU-Net's geometry-restoring exporter; classification probabilities are averaged separately and never spatially resampled.
 
 No external dataset, public pretrained weight, or validation case is used for optimization.
+
+![Implemented shared-encoder ResEnc M architecture](report/figures/architecture.png)
 
 ## Supplied data and integrity checks
 
@@ -25,7 +28,7 @@ The de-identified assessment package contains:
 | Validation | 9 | 15 | 12 | 36 |
 | Test | — | — | — | 72 |
 
-An audit found that 214 of the 288 labeled masks stored some pancreas voxels as `1.0000152587890625` instead of exact integer `1`. The conversion script repairs only values within a declared `1e-3` distance of `{0,1,2}`, writes `uint8` copies, preserves NIfTI geometry, verifies all image/mask pairings and split disjointness, and never edits the source files. Data and generated medical images are excluded from Git. The compiled submission PDF and source-derived qualitative panel are delivered privately rather than published; aggregate plots and the code used to regenerate every panel remain public.
+An audit found that 214 of the 288 labeled masks decoded some pancreas voxels as `1.0000152587890625` instead of exact integer `1`. The conversion script repairs only values within a declared `1e-3` distance of `{0,1,2}`, writes `uint8` copies, preserves NIfTI geometry, verifies all image/mask pairings and split disjointness, and never edits the source files. Data and generated medical images are excluded from Git. The compiled submission PDF and source-derived qualitative panel are delivered privately rather than published; aggregate plots and the code used to regenerate every panel remain public.
 
 ## Repository layout
 
@@ -50,11 +53,17 @@ docs/INTERVIEW_PREP.md             Post-submission technical review notes
 The reported Windows 11 run uses Python 3.12.13, PyTorch 2.8.0+cu128,
 torchvision 0.23.0+cu128, nnU-Net v2.8.1,
 dynamic-network-architectures 0.4.4, and an NVIDIA GeForce RTX 4060 Laptop
-GPU (8,188 MiB). A CUDA tensor allocation test passed. PyTorch 2.9 is
-deliberately excluded because nnU-Net documents a severe 3D AMP performance
-regression in that release line.
+GPU (8,188 MiB). A CUDA tensor allocation test passed.
 
-One reproducible setup is:
+One reproducible setup using standard-library `venv` is:
+
+```powershell
+py -3.12 -m venv D:\MLQuizWork\.venv
+D:\MLQuizWork\.venv\Scripts\python.exe -m pip install -r requirements.txt
+D:\MLQuizWork\.venv\Scripts\python.exe -m pip install -e . --no-deps
+```
+
+The equivalent `uv` setup is:
 
 ```powershell
 uv venv D:\MLQuizWork\.venv --python 3.12
@@ -125,7 +134,7 @@ D:\MLQuizWork\.venv\Scripts\python.exe -m pytest -q
 ```
 
 The historical pre-launch gate had **46 passing tests**; the current expanded
-suite has **56 passing tests**. The exact CLI smoke and guarded benchmark were:
+suite has **72 passing tests**. The exact CLI smoke and guarded benchmark were:
 
 ```powershell
 # Run after the process-scoped environment setup above.
@@ -183,6 +192,10 @@ not reported as final results.
 
 Online patch metrics are monitoring signals, not the final reported scores. `checkpoint_final.pth`, the native segmentation `checkpoint_best.pth`, and `checkpoint_best_multitask.pth` are compared on the complete fixed validation set before test inference.
 
+Model checkpoints are not committed because they are large and can embed local
+provenance. The evaluated checkpoint hash and exact reproduction configuration
+are reported; access to weights can be provided to the reviewer if permitted.
+
 ## Joint inference and evaluation
 
 The commands below are prepared, but they have not yet been run against a
@@ -195,7 +208,8 @@ $model = 'D:\MLQuizWork\nnUNet_results\Dataset501_PancreasMultitask\nnUNetTraine
 D:\MLQuizWork\.venv\Scripts\python.exe .\scripts\predict_joint.py `
   --input <raw-validation-images> --output <validation-output> `
   --model $model --folds 0 --checkpoint checkpoint_final.pth `
-  --probability-csv <validation-output>\subtype_probabilities.csv
+  --probability-csv <validation-output>\subtype_probabilities.csv `
+  --runtime-json <validation-output>\runtime.json
 
 D:\MLQuizWork\.venv\Scripts\python.exe .\scripts\evaluate_predictions.py `
   --predictions <validation-output> --references <prepared-validation-labels> `
@@ -204,6 +218,17 @@ D:\MLQuizWork\.venv\Scripts\python.exe .\scripts\evaluate_predictions.py `
   --classification-reference-split validation `
   --output-json <validation-metrics.json> `
   --output-csv <validation-case-metrics.csv>
+
+# Repeat prediction/evaluation for all three declared candidates, then apply
+# the frozen equal-weight selection rule and hash each checkpoint.
+D:\MLQuizWork\.venv\Scripts\python.exe .\scripts\select_checkpoint.py `
+  --candidate checkpoint_best=<best-metrics.json> `
+  --candidate checkpoint_best_multitask=<multitask-metrics.json> `
+  --candidate checkpoint_final=<final-metrics.json> `
+  --checkpoint checkpoint_best=$model\fold_0\checkpoint_best.pth `
+  --checkpoint checkpoint_best_multitask=$model\fold_0\checkpoint_best_multitask.pth `
+  --checkpoint checkpoint_final=$model\fold_0\checkpoint_final.pth `
+  --output <checkpoint-selection.json>
 ```
 
 The evaluator reports unweighted case-level mean/std and bootstrap confidence intervals for whole-pancreas Dice (`label > 0`) and lesion Dice (`label == 2`), plus a fixed three-class confusion matrix, per-class precision/recall/F1, accuracy, and macro-F1. Empty reference and prediction receives Dice 1; a one-sided empty set receives 0. Confusion-matrix rows are references and columns are predictions.
@@ -236,7 +261,7 @@ proposed tests, and supported debugging, experiment monitoring, evaluation,
 and packaging. Amirfaham Fallahpour defined the goal and quality bar, supplied
 access and compute, made consequential scope decisions, reviewed the work, and
 owns the final submission. AI outputs were treated as untrusted until checked
-with data audits, 56 automated tests, real CUDA smoke tests, saved
+with data audits, 72 automated tests, real CUDA smoke tests, saved
 configuration/checkpoint evidence, and human review; the final deliverables
 will additionally require clean archive validation before submission. See
 [docs/AI_WORKFLOW.md](docs/AI_WORKFLOW.md).
@@ -248,3 +273,12 @@ clinical device. A single small held-out split cannot establish external
 validity across institutions, scanners, or acquisition protocols. Repository
 code and documentation are licensed under the [Apache License 2.0](LICENSE);
 the assessment data are excluded and are not redistributed under that license.
+
+## Contributing and acknowledgements
+
+This repository is a time-bounded assessment submission. Reproducible bug
+reports and focused pull requests are welcome after the evaluation period; do
+not attach assessment data, predictions, or credentials. The implementation
+builds on nnU-Net v2 and its cited dependencies. OpenAI Codex provided the
+substantial AI assistance disclosed above; Amirfaham Fallahpour owns the final
+review and submission decisions.

@@ -2,9 +2,16 @@
 
 ## Disclosure
 
-This take-home project is being developed with **substantial assistance from OpenAI Codex**, consistent with the assessment’s instruction to use AI coding tools and to describe the AI workflow. AI assistance covers a majority of the initial code and documentation generation. The final estimate will be recorded here after the repository is complete rather than inferred from unfinished work.
+This take-home project was developed with **substantial assistance from OpenAI Codex**, consistent with the assessment’s instruction to use AI coding tools and to describe the AI workflow. AI assistance covers a majority of the initial code and documentation generation.
 
-**Estimated AI-generated implementation at final submission:** `PENDING (expected to exceed 50%; final estimate and method to be stated)`
+**Estimated AI-generated implementation and documentation:** **85–95%**. This
+range is based on file-level provenance and the recorded interaction/worklog,
+not a misleading line count after formatting, library-generated configuration,
+candidate review, and iterative corrections.
+
+**AI surface:** OpenAI Codex operating as an agent in the candidate's shared
+local workspace. No unverified claim is made about an internal backend model
+version.
 
 The project is owned and submitted by **Amirfaham Fallahpour**, an Undergraduate Student and Neuroscience Specialist at the University of Toronto Scarborough. Amirfaham set the project objective, quality standard, risk priorities, deadline strategy, and scope; supplies human-only access and approvals; reviews decisions and artifacts; and accepts responsibility for the final submission. AI assistance does not transfer authorship of experimental evidence or accountability for claims.
 
@@ -46,7 +53,7 @@ Examples of requirement-to-evidence mapping:
 
 ### 2. Data audit with immutable source files
 
-AI-assisted scripts inspect case counts, pairings, NIfTI metadata, value ranges, and label sets. A source audit identified that many masks represent the intended pancreas label with a near-integer float rather than exact integer `1`. The planned correction is deterministic conversion into a separate nnU-Net dataset; the supplied files remain unchanged.
+AI-assisted scripts inspect case counts, pairings, NIfTI metadata, value ranges, and label sets. A source audit identified that many masks decode the intended pancreas label as a near-integer float rather than exact integer `1`. The correction is deterministic conversion into a separate nnU-Net dataset; the supplied files remain unchanged.
 
 Every automated correction must answer:
 
@@ -69,7 +76,7 @@ Each run is tied to:
 - a Git commit;
 - an explicit configuration;
 - a dataset fingerprint/split manifest;
-- a random seed;
+- the deliberately nondeterministic training policy and deterministic evaluation seed;
 - hardware and environment versions;
 - a W&B run ID;
 - saved checkpoints and metric artifacts.
@@ -88,7 +95,7 @@ Amirfaham is asked to participate where AI cannot or should not act alone:
 
 ### 6. Artifact-derived reporting
 
-Tables are populated from exported metrics wherever possible. Manual transcription is cross-checked. All unmeasured fields remain visibly marked `PENDING`; neither plausible values nor W&B dashboard impressions are substituted for evaluation output.
+Tables are populated from exported metrics wherever possible. Manual transcription is cross-checked. Unmeasured fields remain visibly marked as unfinished during development; neither plausible values nor W&B dashboard impressions are substituted for evaluation output.
 
 ### 7. Final adversarial check
 
@@ -153,13 +160,19 @@ AI output is treated as an untrusted draft until checked. Verification is propor
 
 The following concise disclosure will be updated with final facts and included in the report:
 
-> This project was completed with substantial assistance from OpenAI Codex, which generated a majority of the initial implementation and documentation, proposed tests, and supported experiment monitoring and analysis. Amirfaham Fallahpour owned the project direction, priorities, access, consequential decisions, verification, editorial review, and final submission. AI-generated work was checked through automated tests, data-integrity audits, saved experiment artifacts, and manual review. No metric was reported without evaluation from a saved model artifact. The final estimated AI contribution and its basis are: `PENDING`.
+> This project was completed with substantial assistance from OpenAI Codex, which generated a majority of the initial implementation and documentation, proposed tests, and supported experiment monitoring and analysis. Amirfaham Fallahpour owned the project direction, priorities, access, consequential decisions, verification, editorial review, and final submission. AI-generated work was checked through automated tests, data-integrity audits, saved experiment artifacts, and manual review. No metric was reported without evaluation from a saved model artifact. An estimated 85–95% of the initial repository implementation and documentation was AI-generated; the range is based on file-level provenance and the recorded workflow rather than a post-formatting line count.
+
+One concrete verification failure was caught before production training:
+dependency resolution had replaced the intended CUDA-enabled PyTorch build.
+A direct `torch.cuda.is_available()` check and real CUDA tensor operation exposed
+the problem; the environment was rebuilt from the explicit PyTorch CUDA 12.8
+index and then checked with `pip check`, unit tests, and a real GPU smoke run.
 
 ## Finalization checklist
 
-- [ ] Replace the contribution estimate with a stated method and honest range.
-- [ ] Add the exact AI tool/model surface used; do not guess an internal model version.
+- [x] Replace the contribution estimate with a stated method and honest range.
+- [x] Add the exact AI tool/model surface used; do not guess an internal model version.
 - [ ] Link relevant tests, W&B runs, and worklog entries.
-- [ ] Describe at least one AI-generated error or rejected suggestion and how verification caught it.
+- [x] Describe at least one AI-generated error or rejected suggestion and how verification caught it.
 - [ ] Confirm that contribution wording matches actual human review performed.
-- [ ] Confirm that no sensitive prompt content, credentials, or data paths are disclosed.
+- [x] Confirm that no sensitive prompt content, credentials, or data are disclosed.

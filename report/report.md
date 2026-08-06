@@ -35,8 +35,10 @@ FINALIZATION CONTRACT
 
 > **DRAFT — NOT READY FOR SUBMISSION.** Every `PENDING_*` field denotes a result, link, figure, hash, or final review item that does not yet exist. No placeholder is an estimate.
 
-**Public repository:** `PENDING_GITHUB_URL`  
-**Weights & Biases run:** `PENDING_WANDB_URL`  
+**Public repository:** [github.com/Amirfaham1/pancreas-multitask-nnunet](https://github.com/Amirfaham1/pancreas-multitask-nnunet)
+
+**Weights & Biases run:** `PENDING_WANDB_URL`
+
 **Reported Git commit:** `PENDING_GIT_COMMIT`
 
 # Introduction
@@ -69,6 +71,8 @@ The assessment package does not provide scanner models, acquisition protocols, c
 | Training | 62 | 106 | 84 | 252 |
 | Validation | 9 | 15 | 12 | 36 |
 | Test | — | — | — | 72 |
+
+: Supplied case counts and subtype composition. {#tbl:split}
 
 Subtype 1 forms 42.1% of the training set, subtype 2 forms 33.3%, and subtype 0 forms 24.6%. This imbalance is moderate rather than extreme, but an accuracy-only objective could still favor subtype 1. Classification is therefore trained with inverse-frequency class weights and evaluated with macro-F1 and per-class recall/precision.
 
@@ -128,6 +132,8 @@ nnU-Net v2 [1] automatically selects target spacing, patch size, batch size, nor
 | CT normalization mask | disabled |
 | CT clip bounds | training-foreground 0.5th/99.5th percentiles: -55.9961 / 179.9780 |
 | CT centering/scaling | training-foreground mean 74.8919; standard deviation 44.0982 |
+
+: Frozen train-only nnU-Net planning and preprocessing configuration. {#tbl:planning}
 
 CT normalization clips intensities to the training-derived percentile bounds, subtracts the training-derived mean, and divides by the training-derived standard deviation. The median axial spacing is much coarser than in-plane resolution; accordingly, the first encoder kernel is $1\times3\times3$ and the first downsampling stride preserves the axial dimension.
 
@@ -221,6 +227,8 @@ Table 3 gives the exact launched-run configuration. The 200-epoch cap is a deadl
 | PyTorch compilation | disabled |
 | Training determinism | not guaranteed; fixed split, stochastic augmentation/CUDA |
 
+: Exact production-training configuration. {#tbl:training-config}
+
 The training transform uses nnU-Net v2.8.1's standard 3D pipeline: rotation up to $\pm 30^{\circ}$ with probability 0.2; synchronized scaling in `[0.7,1.4]` with probability 0.2; Gaussian noise (0.1); Gaussian blur (0.2); multiplicative brightness (0.15); contrast (0.15); simulated low resolution (0.25); inverted gamma (0.1); ordinary gamma (0.3); and mirroring over all three spatial axes. Elastic deformation is disabled by the inherited configuration. The fixed validation loader performs no stochastic intensity or spatial augmentation.
 
 No global deterministic training seed is forced by the launched trainer. The supplied split itself is deterministic, but the exact optimization path is not bitwise reproducible across reruns. This is reported as a limitation rather than labelling the configuration “seed 12345”; 12345 is used only for deterministic evaluation bootstrapping.
@@ -244,7 +252,7 @@ The trainer does not use automated early stopping. Training can be manually term
 
 ## Development checks before the long run
 
-High-risk contracts were tested before expensive training: case-ID-to-subtype mapping, inverse-frequency weights, macro-F1, patch-evidence weighting, attention-head compatibility, network tensor shapes, gradient flow into the shared encoder, segmentation-only compatibility, mirror/tile/fold classification aggregation, atomic GPU-to-CPU inference retry, categorical mask repair, fixed-split generation, evaluation conventions, report-figure generation, and final archive structure. At the current report revision, all 56 repository tests pass; the four emitted warnings are deprecation warnings inside the third-party `batchgenerators` package rather than test failures. This count is rerun at the evaluated source commit.
+High-risk contracts were tested before expensive training: case-ID-to-subtype mapping, inverse-frequency weights, macro-F1, patch-evidence weighting, attention-head compatibility, network tensor shapes, gradient flow into the shared encoder, segmentation-only compatibility, mirror/tile/fold classification aggregation, atomic GPU-to-CPU inference retry, categorical mask repair, fixed-split generation, evaluation conventions, report-figure generation, complete-checkpoint selection, and final archive structure. At the current report revision, all 72 repository tests pass; the four emitted warnings are deprecation warnings inside the third-party `batchgenerators` package rather than test failures. This count is rerun at the evaluated source commit.
 
 A full planned-patch CUDA forward/backward smoke test used batch size 2 on the RTX 4060 Laptop GPU and completed within the 8 GB device budget. The production training log additionally confirms that a complete multi-task training/validation epoch finished without an out-of-memory failure.
 
@@ -261,9 +269,9 @@ The final W&B record must include:
 - synchronization status: `PENDING_WANDB_SYNC_STATUS`; and
 - screenshots/exports used in Figures 2 and 3: `PENDING_WANDB_EXPORT_PATHS`.
 
-> **Figure 2 — PENDING_LOSS_CURVES.** Training and validation segmentation/classification loss curves from the reported run. Use the same epoch axis, label smoothed versus raw series if applicable, and mark the selected checkpoint.
+> **Figure 2 — PENDING_LOSS_CURVES.** Raw epoch-level training and validation-patch loss curves for the segmentation and classification objectives. These optimization traces are not full-volume results.
 
-> **Figure 3 — PENDING_PERFORMANCE_CURVES.** Native pancreas/lesion patch Dice, whole-pancreas patch diagnostic, patch-aggregated macro-F1, validation case coverage, and learning rate. Caption these as monitoring diagnostics rather than full-volume final results.
+> **Figure 3 — PENDING_PERFORMANCE_CURVES.** Native label-1/lesion patch Dice, whole-pancreas and mean-foreground patch diagnostics, plus patch-aggregated macro-F1 and accuracy. These curves are monitoring diagnostics rather than final full-volume metrics.
 
 ## Checkpoint production and final selection
 
@@ -302,11 +310,13 @@ The final inference switches are:
 | Everything-on-device | enabled, with atomic CPU-results fallback on runtime failure |
 | Post-processing | none predeclared; any validation-selected change must be disclosed |
 
+: Joint full-volume inference settings. {#tbl:inference}
+
 Probability averaging is an explicit ensemble rule, not mathematically equivalent to averaging logits. Equal tile weighting for classification is simple and reproducible, but it may give non-lesion or padded-context tiles too much influence. This is an implementation-specific limitation and a useful future ablation target.
 
 # Evaluation aligned with Metrics Reloaded
 
-Metrics Reloaded recommends choosing metrics from the task and target properties, explicitly stating aggregation and edge-case rules, and avoiding a single headline value without failure analysis [3]. The present tasks are semantic segmentation of two nested foreground definitions and single-label multiclass classification. Table 4 maps each question to its evidence.
+Metrics Reloaded recommends choosing metrics from the task and target properties, explicitly stating aggregation and edge-case rules, and avoiding a single headline value without failure analysis [3]. The present tasks are semantic segmentation of two nested foreground definitions and single-label multiclass classification. Table 5 maps each question to its evidence.
 
 | Evaluation question | Primary evidence | Supporting evidence |
 |---|---|---|
@@ -315,6 +325,8 @@ Metrics Reloaded recommends choosing metrics from the task and target properties
 | Are all three subtypes separated? | macro-F1 over fixed labels 0/1/2 | class precision/recall/F1, support, confusion matrix |
 | How uncertain is the fixed-split estimate? | 95% case-bootstrap interval | raw case-level CSV; explicit $n=36$ |
 | Are artifacts structurally valid? | geometry/label/count validators | audit JSON and archive SHA-256 |
+
+: Task-to-metric and supporting-evidence map. {#tbl:evaluation-map}
 
 ## Segmentation definitions
 
@@ -361,13 +373,11 @@ The report is populated from those saved files. The JSON records all conventions
 
 ## Qualitative case-selection protocol
 
-Examples are selected by a reproducible rule after all 36 cases are scored, not by visually searching for attractive slices. The two “strong” cases are the highest lesion-Dice cases and the two “weak” cases are the lowest lesion-Dice cases; ties are broken lexicographically by case ID. For each case, axial, coronal, and sagittal planes are selected through the reference-lesion centroid (or the prediction centroid if needed) and displayed with a consistent legend. Whole-pancreas and lesion Dice, subtype reference/prediction, and lesion reference volume appear in the caption.
+Examples are selected by a reproducible rule after all 36 cases are scored, not by visually searching for attractive slices. The two “strong” cases are the highest lesion-Dice cases and the two “weak” cases are the lowest lesion-Dice cases; whole-pancreas Dice and case ID break ties deterministically. For each case and orientation, the slice with the greatest reference/prediction lesion-union area is shown; whole-organ union is the fallback if both lesion masks are empty. One combined panel uses a fixed CT window and contour legend. Row labels report whole-pancreas and lesion Dice, subtype reference/prediction, and reference lesion voxels.
 
 > **Figure 4 — PENDING_DICE_DISTRIBUTION.** Paired case-level distribution (all 36 points) for whole-pancreas and lesion Dice, with mean, median, and undergraduate target lines. Optionally add lesion volume versus lesion Dice without implying causality.
 
-> **Figure 5 — PENDING_TWO_STRONG_EXAMPLES.** At least two validation examples selected by the declared top-lesion-Dice rule. Show three anatomical planes and reference/prediction overlays for labels 1 and 2.
-
-> **Figure 6 — PENDING_TWO_WEAK_EXAMPLES.** At least two validation examples selected by the declared bottom-lesion-Dice rule. Include complete misses and remote false positives if observed; do not hide them.
+> **Figure 5 — PENDING_QUALITATIVE_CASES.** One combined three-plane panel containing the two rule-selected weakest and two strongest lesion-Dice cases, with consistent reference/prediction contours for labels 1 and 2.
 
 # Results
 
@@ -378,6 +388,8 @@ Examples are selected by a reproducible rule after all 36 cases are scored, not 
 | Segmentation | Whole-pancreas Dice, mean $\pm$ SD | 0.90 | `PENDING_WHOLE_MEAN_SD` | `PENDING_WHOLE_CI` | `PENDING` |
 | Segmentation | Lesion Dice, mean $\pm$ SD | 0.27 | `PENDING_LESION_MEAN_SD` | `PENDING_LESION_CI` | `PENDING` |
 | Classification | Macro-F1 | 0.60 | `PENDING_MACRO_F1` | `PENDING_MACRO_F1_CI` | `PENDING` |
+
+: Primary fixed-validation results and undergraduate targets. {#tbl:primary-results}
 
 **Selected checkpoint:** `PENDING_CHECKPOINT_NAME_EPOCH_HASH`.  
 **Completed training:** `PENDING_EPOCHS` epochs / `PENDING_WALL_CLOCK_HOURS` hours.  
@@ -392,6 +404,8 @@ Examples are selected by a reproducible rule after all 36 cases are scored, not 
 | Whole pancreas (`label > 0`) | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` |
 | Lesion (`label == 2`) | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` |
 
+: Case-level segmentation distribution over the 36 fixed validation cases. {#tbl:segmentation-results}
+
 `PENDING_SEGMENTATION_INTERPRETATION`: report whether lesion performance varies with reference lesion size, distinguish boundary errors from complete misses, and explain why whole-pancreas binarization can remain high when lesion voxels are mislabeled as normal pancreas.
 
 ## Classification detail
@@ -403,13 +417,25 @@ Examples are selected by a reproducible rule after all 36 cases are scored, not 
 | 2 | 12 | `PENDING` | `PENDING` | `PENDING` | `PENDING` |
 | **Macro average** | 36 | 36 | `PENDING` | `PENDING` | **`PENDING`** |
 
-> **Figure 7 — PENDING_CONFUSION_MATRIX.** Three-class confusion matrix with rows explicitly labelled “reference” and columns “prediction”; show raw counts, not percentages alone.
+: Fixed-validation three-class classification results. {#tbl:classification-results}
+
+> **Figure 6 — PENDING_CONFUSION_MATRIX.** Three-class confusion matrix with rows explicitly labelled “reference” and columns “prediction”; cells show raw counts.
 
 `PENDING_CLASSIFICATION_INTERPRETATION`: identify the dominant confusion, minority-class recall, and any precision/recall trade-off. Do not infer pathology mechanisms from folder labels alone.
 
 ## Training behavior and checkpoint choice
 
-The selected checkpoint occurred at epoch `PENDING_SELECTED_EPOCH`. Peak allocated/reserved VRAM was `PENDING_PEAK_VRAM`, and mean epoch duration after warm-up was `PENDING_EPOCH_TIME`. The loss and diagnostic curves show `PENDING_CONVERGENCE_AND_GAP_OBSERVATION`. The final choice over stock best, multi-task best, and final checkpoints was `PENDING_SELECTION_EXPLANATION`, following the rule stated in Section 4.3.
+The selected checkpoint occurred at epoch `PENDING_SELECTED_EPOCH`. Peak allocated/reserved VRAM was `PENDING_PEAK_VRAM`, and mean epoch duration after warm-up was `PENDING_EPOCH_TIME`. The loss and diagnostic curves show `PENDING_CONVERGENCE_AND_GAP_OBSERVATION`. The final choice follows the rule stated in Section 4.3 and the complete comparison below.
+
+| Checkpoint candidate | Epoch | Whole Dice | Lesion Dice | Macro-F1 | Equal-weight score | Selected? |
+|---|---:|---:|---:|---:|---:|---|
+| `checkpoint_best.pth` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` |
+| `checkpoint_best_multitask.pth` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` |
+| `checkpoint_final.pth` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` |
+
+: Complete fixed-validation checkpoint comparison used for final selection. {#tbl:checkpoint-comparison}
+
+`PENDING_SELECTION_EXPLANATION`
 
 ## Qualitative review
 
@@ -420,16 +446,20 @@ The selected checkpoint occurred at epoch `PENDING_SELECTED_EPOCH`. Peak allocat
 | Weak 1 | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` |
 | Weak 2 | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` |
 
+: Deterministically selected qualitative validation cases. {#tbl:qualitative-cases}
+
 `PENDING_QUALITATIVE_SYNTHESIS`: connect observed false positives, false negatives, boundary errors, and subtype mistakes to the quantitative distributions without presenting visual correlation as causation.
 
-## Optional inference acceleration
+## Inference efficiency
 
-No acceleration claim belongs in the final report unless baseline and optimized predictions are timed under a synchronized, warm-up-controlled protocol and re-evaluated for accuracy. Disabling TTA or merely increasing sliding-window step size does not satisfy the higher-tier requirement. For this undergraduate submission, this section should be removed if no valid experiment is completed.
+Acceleration is optional at the undergraduate level, so no optimized-runtime claim is made. The required baseline joint inference is still measured end to end with CUDA synchronization implicit at process completion; it includes NIfTI I/O, preprocessing, mirrored sliding-window prediction, geometry restoration, and export.
 
-| Configuration | Time/case | Relative speed | Peak VRAM | Whole Dice | Lesion Dice | Macro-F1 |
-|---|---:|---:|---:|---:|---:|---:|
-| Baseline | `PENDING_OR_REMOVE` | 1.00× | `PENDING` | `PENDING` | `PENDING` | `PENDING` |
-| Optimized (`PENDING_METHOD`) | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` | `PENDING` |
+| Split | Cases | Total wall time | Mean time/case | Peak GPU memory |
+|---|---:|---:|---:|---:|
+| Validation | 36 | `PENDING` | `PENDING` | `PENDING` |
+| Test | 72 | `PENDING` | `PENDING` | `PENDING` |
+
+: Baseline end-to-end joint-inference efficiency. {#tbl:inference-runtime}
 
 # Discussion
 
@@ -506,6 +536,8 @@ AI output was treated as an untrusted draft. Verification includes unit tests on
 | Evaluation bootstrap seed | 12345 |
 | Dependency specification | `requirements.txt` |
 | Reported Git commit | `PENDING_GIT_COMMIT` |
+
+: Software, hardware, and reproducibility environment. {#tbl:environment}
 
 ## Reproduction sequence
 
@@ -590,15 +622,6 @@ manifest; embedding a PDF's own hash inside that PDF would be self-referential.
 
 This project implements the required nnU-Net v2 3D ResEnc M multi-task system while treating data integrity, leakage prevention, independent evaluation, and AI disclosure as part of the technical result. The classifier combines global context and learned-query cross-attention over the shared bottleneck; training addresses subtype frequency imbalance and patch-level evidence without changing the supplied split or using external weights. The final system obtains `PENDING_CONCLUSION_RESULTS`. Its strongest supported property is `PENDING_PRIMARY_STRENGTH`, while `PENDING_PRIMARY_WEAKNESS` remains the main limitation. These conclusions must be replaced only after the reported checkpoint, fixed-split artifacts, W&B record, public repository, and test archive all pass final review.
 
-# References {.unnumbered}
-
-1. Isensee, F., Jaeger, P. F., Kohl, S. A. A., Petersen, J., & Maier-Hein, K. H. (2021). nnU-Net: a self-configuring method for deep learning-based biomedical image segmentation. *Nature Methods, 18*, 203–211. <https://doi.org/10.1038/s41592-020-01008-z>
-2. Cao, K., Xia, Y., Yao, J., et al. (2023). Large-scale pancreatic cancer detection via non-contrast CT and deep learning. *Nature Medicine, 29*, 3033–3043. <https://doi.org/10.1038/s41591-023-02640-w>
-3. Maier-Hein, L., Reinke, A., Godau, P., et al. (2024). Metrics Reloaded: recommendations for image analysis validation. *Nature Methods, 21*, 195–212. <https://doi.org/10.1038/s41592-023-02151-z>
-4. Lee, C.-Y., Xie, S., Gallagher, P., Zhang, Z., & Tu, Z. (2015). Deeply-supervised nets. *Proceedings of AISTATS*, 562–570. <https://proceedings.mlr.press/v38/lee15a.html>
-5. Szegedy, C., Vanhoucke, V., Ioffe, S., Shlens, J., & Wojna, Z. (2016). Rethinking the Inception architecture for computer vision. *Proceedings of CVPR*, 2818–2826. <https://doi.org/10.1109/CVPR.2016.308>
-6. Vaswani, A., Shazeer, N., Parmar, N., et al. (2017). Attention is all you need. *Advances in Neural Information Processing Systems, 30*. <https://papers.nips.cc/paper/7181-attention-is-all-you-need>
-
 # Requirement-to-evidence traceability {.unnumbered}
 
 | Brief requirement | Implementation evidence | Report evidence | Status |
@@ -608,28 +631,20 @@ This project implements the required nnU-Net v2 3D ResEnc M multi-task system wh
 | W&B for both tasks | trainer custom logger and run artifact | Section 4.2; Figs. 2–3 | `PENDING_PUBLIC_LINK` |
 | Classification imbalance strategy | weighted CE and patch reliability | Section 3.5 | implemented |
 | Overfitting strategy | augmentation/configuration/monitoring | Sections 3.6–3.7 | implemented |
-| Metrics Reloaded-aligned validation | independent metric module and CLI | Section 5; Figs. 4–7 | evaluator implemented; results pending |
+| Metrics Reloaded-aligned validation | independent metric module and CLI | Section 5; Figs. 4–6 | evaluator implemented; results pending |
 | No validation training | split manifest and training log | Sections 2.3 and 4 | verified |
 | No external data/pretrained weights | training command/provenance review | Sections 1, 2.3, 9 | final checkpoint review pending |
-| AI workflow | `docs/AI_WORKFLOW.md` | Section 8 | implemented; final estimate pending |
-| Public GitHub | repository privacy/secret scan | title page and Section 9 | `PENDING_PUBLICATION` |
+| AI workflow | `docs/AI_WORKFLOW.md` | Section 8 | implemented; estimate disclosed |
+| Public GitHub | repository privacy/secret scan | title page and Section 9 | [Public repository](https://github.com/Amirfaham1/pancreas-multitask-nnunet), verified 2026-08-05 |
 | 72 masks and subtype CSV | joint inference + ZIP validator | Section 9.3 | `PENDING_PREDICTIONS` |
 
-# Final report and submission audit {.unnumbered}
+: Requirement-to-evidence traceability at finalization. {#tbl:traceability}
 
-- [ ] The LLNCS PDF has at least eight content pages excluding references.
-- [ ] No `PENDING` token remains anywhere in this file or generated PDF.
-- [ ] Candidate name, affiliation, date, PDF filename, and PDF metadata are correct.
-- [ ] Public GitHub and W&B links open in a logged-out/private-browser check.
-- [ ] Reported commit is public, clean, and contains no data, credentials, or private paths.
-- [ ] Every number matches the frozen aggregate JSON or case CSV.
-- [ ] Mean $\pm$ SD, bootstrap CIs, aggregation, zero-division, and empty-mask rules are explicit.
-- [ ] Training diagnostics are not mislabelled as final full-volume metrics.
-- [ ] Methods match the reported config, plan, debug file, code, and checkpoint.
-- [ ] Validation supports sum to 36 and test outputs sum to 72.
-- [ ] Figures 5 and 6 contain at least two rule-selected strong and two weak validation examples.
-- [ ] Confusion-matrix axes and all figure legends are legible.
-- [ ] AI disclosure matches actual use and includes one concrete verification example.
-- [ ] Failed targets and limitations are stated plainly.
-- [ ] The extracted ZIP passes the validator, and PDF/ZIP hashes are recorded.
-- [ ] Final PDF and ZIP are opened manually before submission.
+# References {.unnumbered}
+
+1. Isensee, F., Jaeger, P. F., Kohl, S. A. A., Petersen, J., & Maier-Hein, K. H. (2021). nnU-Net: a self-configuring method for deep learning-based biomedical image segmentation. *Nature Methods, 18*, 203–211. <https://doi.org/10.1038/s41592-020-01008-z>
+2. Cao, K., Xia, Y., Yao, J., et al. (2023). Large-scale pancreatic cancer detection via non-contrast CT and deep learning. *Nature Medicine, 29*, 3033–3043. <https://doi.org/10.1038/s41591-023-02640-w>
+3. Maier-Hein, L., Reinke, A., Godau, P., et al. (2024). Metrics Reloaded: recommendations for image analysis validation. *Nature Methods, 21*, 195–212. <https://doi.org/10.1038/s41592-023-02151-z>
+4. Lee, C.-Y., Xie, S., Gallagher, P., Zhang, Z., & Tu, Z. (2015). Deeply-supervised nets. *Proceedings of AISTATS*, 562–570. <https://proceedings.mlr.press/v38/lee15a.html>
+5. Szegedy, C., Vanhoucke, V., Ioffe, S., Shlens, J., & Wojna, Z. (2016). Rethinking the Inception architecture for computer vision. *Proceedings of CVPR*, 2818–2826. <https://doi.org/10.1109/CVPR.2016.308>
+6. Vaswani, A., Shazeer, N., Parmar, N., et al. (2017). Attention is all you need. *Advances in Neural Information Processing Systems, 30*. <https://papers.nips.cc/paper/7181-attention-is-all-you-need>

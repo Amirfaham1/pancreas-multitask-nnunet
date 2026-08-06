@@ -49,7 +49,7 @@ Both tasks analyze the same anatomy. Sharing an encoder can improve data efficie
 
 ### Why a separate classification branch?
 
-Segmentation produces spatial predictions, while subtype classification needs one case-level prediction. The branch aggregates encoder features across space and maps them to three logits. The final pooling design is `PENDING`; explain only the version actually used.
+Segmentation produces spatial predictions, while subtype classification needs one case-level prediction. The implemented branch concatenates global-average pooling with an eight-head learned-query cross-attention summary of the deepest 320-channel encoder map, then applies LayerNorm, a 128-unit GELU layer, dropout 0.30, and three logits.
 
 ### What the losses do
 
@@ -59,7 +59,7 @@ The combined objective has the general form
 L = \lambda_{seg}L_{seg} + \lambda_{cls}L_{cls}.
 \]
 
-`L_seg` trains voxel predictions, usually combining overlap- and distribution-based terms in nnU-Net. `L_cls` trains the subtype logits, usually using cross-entropy or an imbalance-aware variant. The reported weights and losses are `PENDING` and must match the configuration.
+Here, $\lambda_{seg}=1$ and $\lambda_{cls}=0.5$. `L_seg` is nnU-Net's deeply supervised memory-efficient soft-Dice plus voxel cross-entropy objective. `L_cls` is inverse-frequency-weighted, label-smoothed ($\epsilon=0.05$) three-class cross-entropy; crops without a lesion voxel receive a 0.25 classification reliability weight.
 
 ### Why accuracy is not enough
 
@@ -77,7 +77,7 @@ DSC = \frac{2|P \cap G|}{|P| + |G|}.
 
 - Whole pancreas: binarize with `label > 0`.
 - Lesion: binarize with `label == 2`.
-- Empty-reference behavior and aggregation: `PENDING`; state the exact implemented rule.
+- Empty-reference behavior: Dice is 1 when both masks are empty and 0 when only one is empty. The headline metric is the unweighted mean of the 36 case-level Dice values.
 
 ### F1 and macro-F1
 
@@ -85,7 +85,7 @@ For each subtype, \(F1 = 2PR/(P+R)\). Macro-F1 is the unweighted mean of the thr
 
 ### Confusion matrix
 
-Rows and columns reveal which subtypes are confused. Always state which axis is ground truth; ours is `PENDING until evaluation code is frozen`.
+Rows and columns reveal which subtypes are confused. In the implemented evaluator, rows are reference (ground-truth) subtypes and columns are predictions.
 
 ## High-probability interview questions
 
@@ -106,7 +106,7 @@ Update this answer if the actual implementation differs.
 Answer from the final configuration, not the list of possibilities. Discuss both:
 
 - **voxel imbalance:** background versus pancreas versus small lesion; nnU-Net patch sampling and segmentation loss;
-- **case imbalance:** subtype counts `62/106/84` in training; `PENDING selected strategy` such as weighted loss or balanced sampling.
+- **case imbalance:** subtype counts `62/106/84` in training produce inverse-frequency loss weights `1.35484/0.79245/1.0`.
 
 Then cite per-class F1 and whether the strategy helped. Do not claim causality without a comparison.
 
@@ -120,11 +120,11 @@ Explain the selected loss weights, their scale, whether both gradients reached t
 
 ### Why take classification features from that encoder level?
 
-Deeper features have larger receptive fields and stronger semantic abstraction, useful for a global subtype decision; shallower features retain detail but cost more to aggregate. The selected feature level/pooling is `PENDING` and should be defended with memory constraints and observed behavior.
+Deeper features have larger receptive fields and stronger semantic abstraction, useful for a global subtype decision; shallower features retain detail but cost more to aggregate. This model uses the deepest 320-channel bottleneck and combines global-average and learned-query attention summaries. The rationale is complementary global/focal evidence, not a claim of superiority without an ablation.
 
 ### How did you handle the abnormal mask value?
 
-The audit found that 214 of 288 labeled masks included a near-integer pancreas value (`1.0000153`) instead of exact integer `1`. The source files were not edited. A deterministic conversion step maps only verified label values to `uint8`, preserves image geometry, logs affected cases, and runs nnU-Net integrity checks. Final artifact names/commands are `PENDING`.
+The audit found that 214 of 288 labeled masks decoded a near-integer pancreas value (`1.0000153`) instead of exact integer `1`. The source files were not edited. `scripts/prepare_dataset.py` maps only values within `1e-3` of allowed labels to `uint8`, preserves and verifies image geometry, and writes `data_audit.json`, `split_manifest.json`, and classification manifests before nnU-Net integrity checking.
 
 ### Why is lesion Dice much harder than whole-pancreas Dice?
 
@@ -149,7 +149,7 @@ No. It is a take-home prototype on de-identified cropped ROIs, with one small fi
 
 Use the final facts from [AI_WORKFLOW.md](AI_WORKFLOW.md). A truthful concise answer:
 
-> OpenAI Codex generated a substantial majority of the initial implementation and documentation and helped test and monitor the workflow. I owned the project direction, quality priorities, access, consequential decisions, review, and final submission. I did not treat generated code as automatically correct: we used data audits, contract tests, smoke tests, saved configurations, W&B evidence, and final artifact validation. The exact final contribution estimate was `PENDING`.
+> OpenAI Codex generated a substantial majority of the initial implementation and documentation and helped test and monitor the workflow. I owned the project direction, quality priorities, access, consequential decisions, review, and final submission. I did not treat generated code as automatically correct: we used data audits, contract tests, smoke tests, saved configurations, W&B evidence, and final artifact validation. The honest estimate is 85–95% of the initial repository content, based on file-level provenance rather than a post-formatting line count.
 
 ## Results defense sheet
 

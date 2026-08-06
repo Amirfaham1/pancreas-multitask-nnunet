@@ -40,8 +40,8 @@ Primary reproducible commands are in `README.md`; the verified sequence was:
 3. prepare again with `--validation-layout imagesTr`;
 4. run `nnUNetv2_preprocess -d 501 -plans_name
    nnUNetResEncUNetMPlans -c 3d_fullres -np 2`; and
-5. copy `splits_final.json` and the audit/classification manifests into the
-   matching preprocessed dataset directory.
+5. copy only `splits_final.json` into the matching preprocessed dataset
+   directory; classification metadata remains under the raw dataset root.
 
 The machine-readable evidence is `data_audit.json`, `split_manifest.json`,
 `classification_manifest.json`, and `classification_labels.json` in the
@@ -64,7 +64,7 @@ Status: **DONE**
 Status: **DONE**
 
 - Historical pre-launch gate: **46 passed** in the provisioned environment.
-- Current expanded repository suite: **56 passed**.
+- Current expanded repository suite: **72 passed**.
 - CLI smoke: one real GPU training/validation update completed without OOM.
 - Stock segmentation inference completed over all 36 held-out volumes, confirming the wrapper preserves nnU-Net's default tensor return contract.
 - Guarded timing probe: five training plus two validation updates; epoch compute 6.13 s; total process 26.18 s including initialization and cleanup.

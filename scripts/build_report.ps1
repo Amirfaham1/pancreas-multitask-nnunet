@@ -13,9 +13,8 @@ Build the submission report with Pandoc and Tectonic using Springer LNCS.
 
 The -Final switch rejects unresolved PENDING/DRAFT markers and requires at
 least eight content pages before the references. The report Markdown is never
-modified: a temporary Pandoc filter moves its Abstract into the LNCS abstract
-environment, prevents duplicate section numbering, and starts References on a
-new page so the content-page check is unambiguous.
+modified: a temporary Pandoc filter supports the LNCS abstract environment and
+starts References on a new page so the content-page check is unambiguous.
 #>
 
 [CmdletBinding()]

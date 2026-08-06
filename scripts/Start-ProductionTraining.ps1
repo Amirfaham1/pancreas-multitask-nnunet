@@ -41,7 +41,10 @@ if ($Resume) {
 
 New-Item -ItemType Directory -Path $logsDirectory -Force | Out-Null
 Set-ExecutionPolicy -Scope Process Bypass -Force
-. $setupScript -WandbMode $WandbMode -DataAugmentationProcesses 1
+. $setupScript `
+    -WorkRoot $WorkRoot `
+    -WandbMode $WandbMode `
+    -DataAugmentationProcesses 1
 
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $stdoutPath = Join-Path $logsDirectory "training_$timestamp.stdout.log"

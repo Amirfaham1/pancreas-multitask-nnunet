@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import multiprocessing
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 import torch
@@ -36,6 +39,30 @@ def _selected_folds(values: list[int | str] | None) -> tuple[int | str, ...] | N
     if "all" in values and values != ["all"]:
         raise ValueError("--folds all cannot be combined with numeric folds")
     return tuple(values)
+
+
+def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
+    """Write a JSON artifact through a same-directory temporary file."""
+
+    path = path.expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        temporary_path.replace(path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -81,6 +108,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--probability-csv",
         type=Path,
         help="Optional detailed per-class probability CSV",
+    )
+    parser.add_argument(
+        "--runtime-json",
+        type=Path,
+        help="Optional atomic JSON artifact with end-to-end runtime and peak memory",
     )
     parser.add_argument(
         "--device",
@@ -154,6 +186,11 @@ def run(args: argparse.Namespace) -> int:
         verbose_preprocessing=args.verbose,
         allow_tqdm=True,
     )
+
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+        torch.cuda.reset_peak_memory_stats(device)
+    started_at = time.perf_counter()
     predictor.initialize_from_trained_model_folder(
         str(args.model.resolve()),
         use_folds=selected_folds,
@@ -167,12 +204,51 @@ def run(args: argparse.Namespace) -> int:
         save_segmentation_probabilities=args.save_segmentation_probabilities,
         overwrite=args.overwrite,
     )
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    total_seconds = time.perf_counter() - started_at
+
+    case_count = len(results)
+    mean_seconds_per_case = total_seconds / case_count if case_count else None
+    if device.type == "cuda":
+        bytes_per_mib = 1024**2
+        peak_allocated_mib = torch.cuda.max_memory_allocated(device) / bytes_per_mib
+        peak_reserved_mib = torch.cuda.max_memory_reserved(device) / bytes_per_mib
+    else:
+        peak_allocated_mib = None
+        peak_reserved_mib = None
+
+    runtime = {
+        "case_count": case_count,
+        "checkpoint": args.checkpoint,
+        "device": str(device),
+        "folds": list(selected_folds) if selected_folds is not None else "auto",
+        "gaussian_enabled": not args.disable_gaussian,
+        "mean_seconds_per_case": mean_seconds_per_case,
+        "peak_allocated_mib": peak_allocated_mib,
+        "peak_reserved_mib": peak_reserved_mib,
+        "tile_step_size": args.tile_step_size,
+        "total_seconds": total_seconds,
+        "tta_enabled": not args.disable_tta,
+    }
+    if args.runtime_json is not None:
+        _write_json_atomic(args.runtime_json, runtime)
+
     classification_path = args.classification_csv or args.output / "subtype_results.csv"
-    print(f"Completed {len(results)} cases")
+    print(f"Completed {case_count} cases")
+    if mean_seconds_per_case is None:
+        print(f"Runtime: {total_seconds:.2f} s total (no cases)")
+    else:
+        print(
+            f"Runtime: {total_seconds:.2f} s total, "
+            f"{mean_seconds_per_case:.2f} s/case"
+        )
     print(f"Masks: {args.output.resolve()}")
     print(f"Subtype CSV: {classification_path.resolve()}")
     if args.probability_csv is not None:
         print(f"Probability details: {args.probability_csv.resolve()}")
+    if args.runtime_json is not None:
+        print(f"Runtime JSON: {args.runtime_json.resolve()}")
     return 0
 
 

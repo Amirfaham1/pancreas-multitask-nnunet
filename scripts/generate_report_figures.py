@@ -196,7 +196,13 @@ def plot_dice_distribution(
     if not np.isfinite(whole).all() or not np.isfinite(lesion).all():
         raise FigureInputError("Dice values must be finite")
     figure, axis = plt.subplots(figsize=(6.2, 4.2), constrained_layout=True)
-    violin = axis.violinplot([whole, lesion], positions=[1, 2], showmedians=True, widths=0.72)
+    violin = axis.violinplot(
+        [whole, lesion],
+        positions=[1, 2],
+        showmeans=True,
+        showmedians=True,
+        widths=0.72,
+    )
     for body, color in zip(violin["bodies"], (GREEN, RED), strict=True):
         body.set_facecolor(color)
         body.set_edgecolor("white")
@@ -204,6 +210,10 @@ def plot_dice_distribution(
     rng = np.random.default_rng(12345)
     axis.scatter(1 + rng.uniform(-0.09, 0.09, whole.size), whole, s=16, color=GREEN, alpha=0.72)
     axis.scatter(2 + rng.uniform(-0.09, 0.09, lesion.size), lesion, s=16, color=RED, alpha=0.72)
+    axis.hlines(0.90, 0.64, 1.36, colors=GREEN, linestyles=":", linewidth=1.5)
+    axis.hlines(0.27, 1.64, 2.36, colors=RED, linestyles=":", linewidth=1.5)
+    axis.text(1.37, 0.90, "target 0.90", color=GREEN, fontsize=7.5, va="center")
+    axis.text(2.37, 0.27, "target 0.27", color=RED, fontsize=7.5, va="center")
     axis.set(
         xticks=[1, 2],
         xticklabels=["Whole pancreas\nlabel > 0", "Lesion\nlabel = 2"],
@@ -307,9 +317,17 @@ def plot_qualitative_cases(
             panel.set_yticks([])
         metrics = row_lookup[case_id]
         descriptor = "weak" if row_index < 2 else "strong"
+        subtype_text = ""
+        if "reference_subtype" in metrics and "predicted_subtype" in metrics:
+            subtype_text = (
+                f"; subtype={metrics['reference_subtype']}/{metrics['predicted_subtype']}"
+            )
+        lesion_size_text = ""
+        if "lesion_reference_voxels" in metrics:
+            lesion_size_text = f"; ref lesion={int(float(metrics['lesion_reference_voxels'])):,} vox"
         axes[row_index, 0].set_ylabel(
             f"{descriptor}: {case_id}\nwhole={float(metrics['whole_pancreas_dice']):.3f}; "
-            f"lesion={float(metrics['lesion_dice']):.3f}",
+            f"lesion={float(metrics['lesion_dice']):.3f}{subtype_text}{lesion_size_text}",
             fontsize=8.5,
         )
     legend = [
