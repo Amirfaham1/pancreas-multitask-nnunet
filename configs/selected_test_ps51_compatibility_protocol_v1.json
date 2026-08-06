@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_selected_test_ps51_implementation_or_any_selected_test_access",
+  "locked_at_utc": "2026-08-06T17:39:27.1776140Z",
+  "scope": "prospective_windows_powershell_5_1_compatibility_only_for_single_locked_selected_test_and_package",
+  "access_at_lock": {
+    "official_reference_masks_tested_or_opened": false,
+    "official_reference_subtypes_tested_or_opened": false,
+    "selected_test_inputs_tested_or_opened": false,
+    "selected_test_outputs_tested_or_opened": false,
+    "selected_test_ledger_tested_or_opened": false,
+    "inference_invocation_count": 0,
+    "package_invocation_count": 0
+  },
+  "bound_final_candidate": {
+    "path": "configs/phd_final_candidate_lock_v5.json",
+    "sha256": "8f508615ee0e6a0296506dbbc06f66e31dd46842cd585ef67f7c133c74c037db",
+    "lock_commit": "e97f0c7fd7dc6961b242f83c2e6f37de7ef2a6ba",
+    "evaluated_implementation_commit": "39b2a60da54e43ffdda648562fc296a8c9910cd9",
+    "full_implementation_manifest_must_pass_unchanged_original_verifier": true
+  },
+  "bound_original_implementation": {
+    "common_path": "scripts/V5-LockedDeliveryCommon.ps1",
+    "common_sha256": "3dc9a80761fa4def5082ddbb4f1d75195716920b53af1bc4622f3aec623607bc",
+    "common_text_length": 81692,
+    "selected_wrapper_path": "scripts/Run-V5LockedSelectedTestAndPackage.ps1",
+    "selected_wrapper_sha256": "e5e7447f49268979bc7e673ec36da7cc163e8f41106d908f20ab82351003e4f4",
+    "selected_wrapper_semantic_body_anchor": "$predictionScript = Join-Path $PSScriptRoot \"predict_joint.py\"",
+    "selected_wrapper_semantic_body_length": 36125,
+    "selected_wrapper_semantic_body_sha256": "c8e0fe1678ec5334887c83b9ef3c9d645a7daee2ab9e1370773ebf1abbd042af",
+    "prediction_script": {
+      "path": "scripts/predict_joint.py",
+      "sha256": "7776477984a1d38563b0e314858a9edb6477b5c0d0599e2fdbd80908e93fdfd6"
+    },
+    "package_script": {
+      "path": "scripts/Package-Submission.ps1",
+      "sha256": "0a7b7706be5882dfe48e914708fa072558f98426ca54e944c6078ce11fd39045"
+    },
+    "validator_script": {
+      "path": "scripts/validate_submission.py",
+      "sha256": "2baca5bfef7b8cd77ad1b5f1f94ef49ce28ea736547ee286fd44c1dcbedd569a"
+    },
+    "environment_script": {
+      "path": "scripts/Set-QuizEnvironment.ps1",
+      "sha256": "0c8c09c76116bb0414ebc87f46409a1e91cc114aea73d08919524d84a548bc2d"
+    },
+    "python_executable": {
+      "path": "D:\\MLQuizWork\\.venv\\Scripts\\python.exe",
+      "sha256": "205e1758ef9d2df113567b3ffa27c843b2b680af06bc3260443b5be1d72db37f"
+    }
+  },
+  "only_permitted_common_compatibility_substitutions": [
+    {
+      "occurrences_required": 1,
+      "original": "$snapshot.PSObject.Properties.Count",
+      "replacement": "@($snapshot.PSObject.Properties).Count",
+      "purpose": "windows_powershell_5_1_deterministic_snapshot_property_count"
+    },
+    {
+      "occurrences_required": 1,
+      "original": "$runtimeImplementation.PSObject.Properties.Count",
+      "replacement": "@($runtimeImplementation.PSObject.Properties).Count",
+      "purpose": "windows_powershell_5_1_runtime_implementation_property_count"
+    },
+    {
+      "occurrences_required": 1,
+      "original": "[IO.File]::Replace($temporary, $destination, $null)",
+      "replacement": "Invoke-V5PS51AtomicJsonReplace -Temporary $temporary -Destination $destination",
+      "purpose": "windows_powershell_5_1_non_null_same_directory_atomic_replace_backup"
+    }
+  ],
+  "transformed_common": {
+    "substitution_count": 3,
+    "text_length": 81725,
+    "utf8_text_sha256": "b3d56bc5e9a7270770ffcb454bef9b3f0eef603b931419736ee2443dd08374bb"
+  },
+  "atomic_replace_compatibility_policy": {
+    "backup_must_be_non_null": true,
+    "backup_must_be_unique_and_in_destination_directory": true,
+    "temporary_and_destination_must_be_existing_leaf_files": true,
+    "backup_must_not_preexist": true,
+    "successful_replacement_backup_is_removed_to_preserve_original_artifact_semantics": true,
+    "failed_replacement_preserves_any_surviving_backup_for_forensics": true,
+    "selected_test_ledger_remains_consumed_after_any_post_creation_failure": true
+  },
+  "compatibility_implementation_policy": {
+    "new_wrapper_path": "scripts/Run-V5LockedSelectedTestAndPackagePS51.ps1",
+    "new_tests_path": "tests/test_v5_selected_test_ps51_compatibility.py",
+    "new_wrapper_must_load_only_the_exact_transformed_common_in_memory": true,
+    "new_wrapper_semantic_body_from_the_frozen_anchor_must_be_byte_identical_to_original": true,
+    "new_wrapper_may_add_only_pre_test_binding_and_compatibility_bootstrap_logic": true,
+    "new_wrapper_and_tests_must_be_committed_and_pushed_before_execution": true,
+    "caller_must_supply_exact_new_wrapper_and_test_sha256_values": true,
+    "published_implementation_commit_must_contain_exact_protocol_wrapper_and_test_bytes": true,
+    "final_candidate_or_original_files_may_change": false,
+    "weights_features_thresholds_offsets_or_decision_rule_may_change": false,
+    "official_gate_may_be_used_as_a_post_validation_tuning_signal": false
+  },
+  "execution_contract": {
+    "selected_test_inference_invocation_count": 1,
+    "package_invocation_count": 1,
+    "test_or_official_data_access_during_compatibility_tests": false,
+    "inference_or_package_invocation_during_compatibility_tests": false,
+    "strict_model_load_and_all_immutable_bindings_precede_selected_test_path_access": true,
+    "one_use_selected_test_ledger_create_new_precedes_selected_test_path_access": true,
+    "original_selected_test_ledger_stage_order_and_payload_schemas_are_preserved": true,
+    "fresh_output_root_and_fresh_delivery_are_required": true,
+    "package_force_or_replacement_is_permitted": false,
+    "original_prediction_package_and_validator_entry_points_are_unchanged": true,
+    "official_gate_must_pass_the_original_unchanged_replacement_gate": true,
+    "failure_after_ledger_creation_consumes_the_run": true,
+    "second_selected_test_run_or_package_attempt_is_permitted": false,
+    "test_targets_submission_feedback_or_post_validation_model_changes_are_permitted": false
+  },
+  "mandatory_disclosure": "The selected-test/package entry point preserves the frozen original wrapper body and candidate exactly, while applying only three prospectively locked Windows PowerShell 5.1 compatibility substitutions to the in-memory Common helper before the single ledger-consumed test inference."
+}
