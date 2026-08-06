@@ -229,6 +229,7 @@ def build_estimator(candidate: CandidateSpec, *, seed: int) -> Pipeline:
             gamma=str(candidate.parameters["gamma"]),
             class_weight="balanced",
             decision_function_shape="ovr",
+            break_ties=True,
             probability=False,
             random_state=seed,
         )

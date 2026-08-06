@@ -171,10 +171,10 @@ def mirror_mean_tile_batch_features(
         elif feature_names != names:
             raise RuntimeError("Encoder feature schema changed between mirror views")
 
+        # Preserve the production batch-one TTA accumulator dtype and operation
+        # order exactly. Feature statistics use explicit float32 separately.
         segmentation_sum = (
-            segmentation.float()
-            if segmentation_sum is None
-            else segmentation_sum + segmentation.float()
+            segmentation if segmentation_sum is None else segmentation_sum + segmentation
         )
         feature_sum = pooled if feature_sum is None else feature_sum + pooled
         logit_sum = logits.float() if logit_sum is None else logit_sum + logits.float()

@@ -80,6 +80,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--features", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
+        "--diagnostic-only",
+        action="store_true",
+        help="Required acknowledgement that v3 classical results cannot be official",
+    )
+    parser.add_argument(
         "--lock",
         type=Path,
         default=ROOT / "configs" / "phd_classification_upgrade_lock_v3.json",
@@ -93,6 +98,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace) -> Path:
+    if not args.diagnostic_only:
+        raise ValueError("V3 classical selection requires explicit --diagnostic-only")
     feature_directory = args.features.expanduser().resolve()
     output = args.output.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -129,6 +136,8 @@ def run(args: argparse.Namespace) -> Path:
     started_at_utc = datetime.now(UTC).isoformat()
     started = time.perf_counter()
     selection = evaluate_locked_candidates(dataset, lock)
+    selection["diagnostic_only"] = True
+    selection["eligible_for_official"] = False
     selection["started_at_utc"] = started_at_utc
     selection["finished_at_utc"] = datetime.now(UTC).isoformat()
     selection["elapsed_seconds"] = time.perf_counter() - started
@@ -140,6 +149,8 @@ def run(args: argparse.Namespace) -> Path:
     _atomic_write_json(selection_path, selection)
 
     calibration = evaluate_cross_fitted_offsets(selection, decision_lock)
+    calibration["diagnostic_only"] = True
+    calibration["eligible_for_official"] = False
     calibration["decision_lock_sha256"] = file_sha256(decision_lock_path)
     calibration["selection_audit_sha256"] = file_sha256(selection_path)
     calibration_path = output / "train_only_decision_calibration.json"
@@ -158,13 +169,18 @@ def run(args: argparse.Namespace) -> Path:
             "ground_truth_masks_used_as_features": False,
             "official_validation_used": False,
             "smote_used": False,
+            "diagnostic_only": True,
+            "eligible_for_official": False,
+            "final_inference_must_reject": True,
         }
     )
-    classifier_path = output / "case_classifier.joblib"
+    classifier_path = output / "diagnostic_classical_case_classifier.joblib"
     save_classifier_bundle(classifier_path, estimator, metadata)
     final_audit = {
         "schema_version": 1,
         "status": "complete",
+        "diagnostic_only": True,
+        "eligible_for_official": False,
         "scope": "252_supplied_training_cases_only",
         "selected_candidate_id": selection["selected_candidate_id"],
         "selected_mean_repeat_oof_macro_f1": selection["selected_mean_repeat_oof_macro_f1"],
