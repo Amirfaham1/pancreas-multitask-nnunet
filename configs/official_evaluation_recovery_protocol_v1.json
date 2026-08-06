@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_recovery_implementation_or_any_official_reference_access",
+  "locked_at_utc": "2026-08-06T17:07:02.3295555Z",
+  "scope": "audit_only_saved_output_continuation_after_completed_locked_inference",
+  "final_candidate": {
+    "lock_path": "configs/phd_final_candidate_lock_v5.json",
+    "lock_sha256": "8f508615ee0e6a0296506dbbc06f66e31dd46842cd585ef67f7c133c74c037db",
+    "lock_commit": "e97f0c7fd7dc6961b242f83c2e6f37de7ef2a6ba",
+    "evaluated_implementation_commit": "39b2a60da54e43ffdda648562fc296a8c9910cd9"
+  },
+  "bound_original_implementation": {
+    "common_path": "scripts/V5-LockedDeliveryCommon.ps1",
+    "common_sha256": "3dc9a80761fa4def5082ddbb4f1d75195716920b53af1bc4622f3aec623607bc",
+    "official_wrapper_path": "scripts/Run-V5LockedFinalEvaluation.ps1",
+    "official_wrapper_sha256": "7b7ea9f937be9b54a1a7e81d0c7727d009159698d62bfc97f01538d1fbd0e79e",
+    "evaluator_path": "scripts/evaluate_predictions.py",
+    "evaluator_sha256": "0c1812137419efe5fe00a9eceb9566b06bdc22a7b49bd8061f38270393637244"
+  },
+  "failure_forensics": {
+    "official_inference_invocation_count": 1,
+    "official_inference_completed_case_count": 36,
+    "official_evaluation_invocation_count": 0,
+    "failed_stage": "hashing_predictions_before_references",
+    "reference_masks_path_tested_or_opened": false,
+    "reference_subtypes_path_tested_or_opened": false,
+    "power_shell_version": "5.1.26100.8875",
+    "primary_exception_type": "System.Management.Automation.PropertyNotFoundException",
+    "primary_exception": "The property 'Count' cannot be found on this object.",
+    "primary_source": "Assert-V5DeterministicRuntime",
+    "primary_source_line": 1115,
+    "failure_ledger_update_exception": "Exception calling Replace with 3 arguments: The path is not of a legal form.",
+    "failure_ledger_update_source": "Write-V5JsonAtomic",
+    "failure_ledger_update_line": 348,
+    "model_or_prediction_failure": false,
+    "hidden_runtime_contract_failure_after_compatibility_substitution": false
+  },
+  "immutable_pre_recovery_evidence": {
+    "output_root": "D:\\MLQuizWork\\phd_upgrade_v5\\official_validation_locked_v5",
+    "original_ledger_path": "configs/official_validation_run_consumed.json",
+    "original_ledger_sha256": "8d2de9121285f6b38aae6a608cd4b02292de3ba44ac550ca39e36e2de922bb23",
+    "original_ledger_status": "started_and_consumed",
+    "original_ledger_reference_access_started": false,
+    "original_ledger_evaluation_invocation_count": 0,
+    "candidate_preflight_sha256": "23060da5788b082bb88d69e444f72e34f0cc800c4cc1cab1097e2722a700fdf1",
+    "runtime_sha256": "8432bd46e4cdb373977f8891c9b04dba5ffaa080189da95402fa4cf875423bc3",
+    "classification_csv_sha256": "99d6dc3f1a08eb6fa7ad5b2fa1600cfa01746c75e2695dff2b42239848f17d45",
+    "probability_csv_sha256": "67396a95279b6575aaf6bb3ed37259cab1fb7292862ed4f1e410bb8ce4d3b02c",
+    "validated_inference_artifact_count": 39,
+    "validated_inference_artifact_set_sha256": "fec59a6b546d9158e6a32eb6be1d4f889b296a184b877dfc0e5baa323e180b28",
+    "full_existing_output_file_count": 40,
+    "full_existing_output_snapshot_sha256": "e39e6abcc774a62adaa5ea1501416bba8cdb24ce5c569864b5cc20fc30ce3087",
+    "mask_count": 36,
+    "mask_snapshot_sha256": "2601e14ce4299317f686b324ee574028b7804dd2049f1e769f66e0251b2ff980",
+    "snapshot_digest_algorithm": "sorted_relative_path_NUL_size_bytes_NUL_lowercase_file_sha256_LF_encoded_as_UTF8",
+    "strict_runtime_validator_passed_after_only_two_ephemeral_count_substitutions": true,
+    "existing_model_outputs_may_be_deleted_modified_or_overwritten": false
+  },
+  "only_permitted_compatibility_substitutions": [
+    {
+      "occurrences_required": 1,
+      "original": "$snapshot.PSObject.Properties.Count",
+      "replacement": "@($snapshot.PSObject.Properties).Count",
+      "purpose": "PowerShell_5_1_deterministic_snapshot_field_count"
+    },
+    {
+      "occurrences_required": 1,
+      "original": "$runtimeImplementation.PSObject.Properties.Count",
+      "replacement": "@($runtimeImplementation.PSObject.Properties).Count",
+      "purpose": "PowerShell_5_1_runtime_implementation_field_count"
+    }
+  ],
+  "recovery_implementation_policy": {
+    "new_wrapper_path": "scripts/Run-V5OfficialEvaluationRecovery.ps1",
+    "new_tests_path": "tests/test_v5_official_evaluation_recovery.py",
+    "original_final_candidate_or_inference_files_may_change": false,
+    "original_common_may_be_patched_only_in_memory": true,
+    "in_memory_substitution_count_must_equal": 2,
+    "original_common_text_length": 81692,
+    "patched_common_text_length": 81698,
+    "patched_common_text_sha256": "0e6ff47c0590f37f546e4937486ec16264dbe4212b70bb8202d7fc297bf6be98",
+    "patched_common_content_sha256_must_be_bound_before_execution": true,
+    "recovery_wrapper_and_tests_must_be_committed_and_pushed_before_execution": true,
+    "separate_execution_lock_required_before_reference_access": true,
+    "train_only_or_synthetic_tests_required_before_execution": true
+  },
+  "recovery_execution_contract": {
+    "recovery_inference_invocation_count": 0,
+    "total_official_inference_invocation_count": 1,
+    "official_evaluator_invocation_count": 1,
+    "further_training_selection_threshold_or_model_changes_allowed": false,
+    "prediction_or_subtype_changes_allowed": false,
+    "recovery_one_use_ledger_must_be_create_new_before_continuation": true,
+    "original_ledger_bytes_must_be_snapshotted_and_hash_verified_before_any_update": true,
+    "all_existing_outputs_must_match_the_frozen_snapshot_before_reference_access": true,
+    "standard_pre_reference_prediction_manifest_must_be_create_new_and_hashed_before_reference_access": true,
+    "reference_paths_may_not_be_tested_or_opened_before_pre_reference_manifest": true,
+    "evaluation_started_record_must_be_durable_before_evaluator_invocation": true,
+    "unchanged_original_evaluator_must_be_invoked_exactly_once": true,
+    "post_evaluation_inference_artifact_set_must_equal_pre_reference_artifact_set": true,
+    "standard_gate_artifact_must_preserve_original_schema": true,
+    "no_second_official_evaluation_or_classifier_iteration_permitted": true,
+    "test_data_access_permitted": false
+  },
+  "claim_boundary": {
+    "validation_case_identifiers_have_label_like_prefixes": true,
+    "case_identifiers_or_paths_used_as_model_inputs": false,
+    "pre_evaluation_recovery_may_use_case_identifiers_only_for_inventory_equality": true,
+    "per_case_predicted_labels_probabilities_or_inferred_performance_may_be_printed_or_analyzed_before_evaluation": false,
+    "human_blinded_to_label_like_case_identifiers_claim_allowed": false,
+    "reference_files_unopened_and_outputs_hash_frozen_before_evaluation_claim_allowed": true
+  },
+  "recovery_files": {
+    "one_use_ledger": "configs/official_validation_recovery_run_consumed.json",
+    "original_ledger_snapshot": "evidence/original_official_validation_ledger_snapshot.json",
+    "pre_reference_manifest": "evidence/pre_reference_prediction_manifest.json",
+    "evaluation_started_record": "evidence/official_evaluation_recovery_started.json",
+    "metrics_json": "evidence/official_evaluation_metrics.json",
+    "case_metrics_csv": "evidence/official_evaluation_cases.csv",
+    "gate_json": "evidence/official_evaluation_gates.json",
+    "completion_record": "evidence/official_evaluation_recovery_complete.json"
+  },
+  "original_ledger_completion_policy": {
+    "original_initial_bytes_must_remain_recoverable_in_the_hash_bound_snapshot": true,
+    "original_ledger_may_be_updated_only_after_the_pre_reference_manifest_is_durable": true,
+    "original_ledger_may_be_updated_only_to_the_originally_intended_stage_schemas": true,
+    "any_update_must_use_a_PowerShell_5_1_compatible_atomic_replace_with_a_non_null_backup": true,
+    "backup_bytes_must_match_original_ledger_sha256": true
+  },
+  "mandatory_disclosure": "The locked official inference completed once, but its PowerShell 5.1 audit wrapper failed before reference access. A separately locked, no-inference saved-output continuation fixed only two collection-count expressions and ledger replacement compatibility, then performed the single evaluation."
+}
