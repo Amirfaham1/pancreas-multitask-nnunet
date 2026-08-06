@@ -248,8 +248,9 @@ artifact. Then take exactly one branch: a negative audit goes directly to the
 three-candidate pass, while an affirmative audit requires the completed rescue
 and the four-candidate switch. `Run-FinalEvaluation.ps1` rejects the wrong
 branch, verifies the relevant checkpoint/audit hashes before inference, refuses
-active production or rescue processes, resumes complete prediction cases by
-default, and deliberately stops before test inference or ZIP creation:
+active production or rescue processes, holds a process-lifetime single-instance
+mutex, resumes complete prediction cases by default, and deliberately stops
+before test inference or ZIP creation:
 
 ```powershell
 $fold = "D:\MLQuizWork\nnUNet_results\Dataset501_PancreasMultitask\" +
@@ -316,7 +317,7 @@ proposed tests, and supported debugging, experiment monitoring, evaluation,
 and packaging. Amirfaham Fallahpour defined the goal and quality bar, supplied
 access and compute, made consequential scope decisions, reviewed the work, and
 owns the final submission. AI outputs were treated as untrusted until checked
-with data audits, 96 automated tests, real CUDA smoke tests, saved
+with data audits, 101 automated tests, real CUDA smoke tests, saved
 configuration/checkpoint evidence, and human review; the final deliverables
 will additionally require clean archive validation before submission. See
 [docs/AI_WORKFLOW.md](docs/AI_WORKFLOW.md).

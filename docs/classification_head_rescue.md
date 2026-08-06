@@ -101,12 +101,24 @@ hash-bound rescue checkpoint and audit.
 
 The wrapper refuses a missing, negative, or hash-mismatched activation audit,
 refuses active production/rescue processes, forces W&B off, and runs in the
-foreground. If interrupted after an epoch checkpoint is committed, continue
+foreground. It shares a process-lifetime named mutex with fixed validation, so
+duplicate or cross-stage launchers cannot contend for the model/GPU. If
+interrupted after an epoch checkpoint is committed, continue
 from its embedded AdamW, AMP, and RNG state:
 
 ```powershell
 .\scripts\Run-ClassificationRescue.ps1 -Resume
 ```
+
+Python owns an exclusive `checkpoint_classification_rescue.pth.lock` file for
+the process lifetime. The wrapper never deletes it automatically, because a
+second near-simultaneous launcher must not be able to remove a live lock. A
+hard process/power loss can leave a stale file; before resuming, verify that no
+`train_classification_rescue.py` process exists, then remove only that exact
+direct-child lock and invoke `-Resume` once. If interruption happened after the
+final checkpoint was atomically committed but before its public audit JSON was
+written, `-Resume` validates the embedded complete state and reconstructs that
+audit without running another optimizer update.
 
 Outputs are:
 

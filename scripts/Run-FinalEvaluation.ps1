@@ -37,6 +37,25 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# A process-lifetime named mutex prevents two launchers from writing the same
+# prediction/evaluation tree. It is released automatically if PowerShell dies,
+# so interrupted runs can resume without a stale on-disk lock.
+$postTrainingMutex = [Threading.Mutex]::new(
+    $false,
+    "Local\PancreasMultitaskPostTraining501Fold0"
+)
+$postTrainingMutexOwned = $false
+try {
+    try {
+        $postTrainingMutexOwned = $postTrainingMutex.WaitOne(0)
+    }
+    catch [Threading.AbandonedMutexException] {
+        $postTrainingMutexOwned = $true
+    }
+    if (-not $postTrainingMutexOwned) {
+        throw "Another rescue/evaluation process already owns the post-training mutex."
+    }
+
 $workRoot = [IO.Path]::GetFullPath($WorkRoot)
 $datasetRoot = Join-Path $workRoot "nnUNet_raw\Dataset501_PancreasMultitask"
 $validationImages = Join-Path $datasetRoot "imagesVal"
@@ -489,9 +508,25 @@ foreach ($candidate in $candidates) {
         "--checkpoint", $candidate.FileName,
         "--classification-csv", $classificationCsv,
         "--probability-csv", $probabilityCsv,
-        "--runtime-json", $runtimeJson,
         "--device", $Device
     )
+    if (-not $Force -and (Test-Path -LiteralPath $runtimeJson -PathType Leaf)) {
+        $existingRuntime = Read-JsonObject `
+            -Path $runtimeJson `
+            -Description "$($candidate.Name) existing runtime artifact"
+        if ([int] (Get-RequiredJsonProperty $existingRuntime "case_count" "Runtime artifact") -ne 36 -or
+            [string] (Get-RequiredJsonProperty $existingRuntime "checkpoint" "Runtime artifact") -ne $candidate.FileName -or
+            [double] (Get-RequiredJsonProperty $existingRuntime "total_seconds" "Runtime artifact") -le 0) {
+            throw (
+                "$($candidate.Name) has an invalid existing runtime artifact; " +
+                "use -Force for a complete measured rerun."
+            )
+        }
+        Write-Host "[$($candidate.Name)] Preserving completed first-pass runtime artifact."
+    }
+    else {
+        $predictionArguments += @("--runtime-json", $runtimeJson)
+    }
     if ($ResultsOnCpu) {
         $predictionArguments += "--results-on-cpu"
     }
@@ -561,4 +596,11 @@ Write-Host "No test inference or submission ZIP was created."
     CheckpointPath = $selection.selected_checkpoint_path
     CheckpointSha256 = $selection.selected_checkpoint_sha256
     SelectionArtifact = $selectionOutput
+}
+}
+finally {
+    if ($postTrainingMutexOwned) {
+        $postTrainingMutex.ReleaseMutex()
+    }
+    $postTrainingMutex.Dispose()
 }

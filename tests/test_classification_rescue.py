@@ -221,6 +221,41 @@ def test_resume_requires_identical_source_and_frozen_schedule() -> None:
         )
 
 
+def test_complete_resume_state_can_repair_a_missing_public_audit() -> None:
+    schedule = RescueSchedule(epochs=2, iterations_per_epoch=3)
+    state = {
+        "schema_version": RESCUE_SCHEMA_VERSION,
+        "source_checkpoint_sha256": "b" * 64,
+        "schedule": schedule.to_dict(),
+        "status": "complete",
+        "completed_epochs": 2,
+        "optimizer_state": {},
+        "rng_state": {},
+        "training_only_history": [{}, {}],
+        "current_component_sha256": {
+            "encoder": "e",
+            "decoder": "d",
+            "classification": "c",
+        },
+    }
+
+    assert (
+        validate_resume_state(
+            state,
+            source_checkpoint_sha256="b" * 64,
+            schedule=schedule,
+        )
+        == 2
+    )
+    state["status"] = "in_progress"
+    with pytest.raises(ValueError, match="status='complete'"):
+        validate_resume_state(
+            state,
+            source_checkpoint_sha256="b" * 64,
+            schedule=schedule,
+        )
+
+
 def test_split_audit_records_zero_validation_use_and_rejects_overlap() -> None:
     audit = validate_disjoint_split(
         ["quiz_0_001", "quiz_1_002"],
@@ -302,3 +337,31 @@ def test_rescue_cli_defaults_match_predeclared_schedule() -> None:
     assert args.expected_training_cases == 252
     assert args.expected_validation_cases == 36
     assert args.resume is False
+
+
+def test_activation_audit_refuses_to_replace_existing_artifact(tmp_path: Path) -> None:
+    script_path = ROOT / "scripts" / "audit_classification_rescue_activation.py"
+    spec = importlib.util.spec_from_file_location("classification_rescue_activation", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    checkpoint = tmp_path / "checkpoint_final.pth"
+    checkpoint.write_bytes(b"not-read-because-output-exists")
+    output = tmp_path / "classification_rescue_activation.json"
+    output.write_text('{"immutable": true}\n', encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="immutable"):
+        module.run(checkpoint, output)
+
+
+def test_rescue_wrapper_never_deletes_the_python_ownership_lock() -> None:
+    source = (ROOT / "scripts" / "Run-ClassificationRescue.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Remove-Item" not in source
+    assert '"train_classification_rescue.py"' in source
+    assert '"Local\\PancreasMultitaskPostTraining501Fold0"' in source
+    assert "$postTrainingMutex.WaitOne(0)" in source
+    assert "$postTrainingMutex.ReleaseMutex()" in source

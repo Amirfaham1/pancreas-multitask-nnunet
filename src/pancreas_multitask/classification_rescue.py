@@ -519,6 +519,8 @@ def validate_resume_state(
     history = state.get("training_only_history")
     if not isinstance(history, list) or len(history) != completed_epochs:
         raise ValueError("Resume history length does not match completed_epochs")
+    if completed_epochs == schedule.epochs and state.get("status") != "complete":
+        raise ValueError("A fully completed rescue checkpoint must have status='complete'")
     if not isinstance(state.get("current_component_sha256"), Mapping):
         raise TypeError("Resume checkpoint lacks component hashes")
     return completed_epochs

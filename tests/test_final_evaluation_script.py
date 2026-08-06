@@ -85,6 +85,26 @@ def test_final_evaluation_script_preserves_resume_and_stops_before_submission() 
     assert "validate_submission.py" not in source
 
 
+def test_final_evaluation_uses_process_lifetime_single_instance_mutex() -> None:
+    source = SOURCE
+
+    assert '"Local\\PancreasMultitaskPostTraining501Fold0"' in source
+    assert "$postTrainingMutex.WaitOne(0)" in source
+    assert "catch [Threading.AbandonedMutexException]" in source
+    assert "$postTrainingMutex.ReleaseMutex()" in source
+    assert "$postTrainingMutex.Dispose()" in source
+
+
+def test_resume_preserves_completed_first_pass_runtime_artifacts() -> None:
+    source = SOURCE
+
+    assert "Preserving completed first-pass runtime artifact" in source
+    assert 'Get-RequiredJsonProperty $existingRuntime "case_count"' in source
+    assert 'Get-RequiredJsonProperty $existingRuntime "checkpoint"' in source
+    assert 'Get-RequiredJsonProperty $existingRuntime "total_seconds"' in source
+    assert '$predictionArguments += @("--runtime-json", $runtimeJson)' in source
+
+
 def test_activation_audit_deterministically_controls_three_or_four_candidates() -> None:
     source = SOURCE
 

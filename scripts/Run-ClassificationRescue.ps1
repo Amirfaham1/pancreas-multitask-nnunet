@@ -5,7 +5,27 @@ param(
     [switch]$Resume
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+# Share a process-lifetime mutex with fixed validation so rescue, duplicate
+# rescue launchers, and evaluation cannot contend for the model or GPU. An
+# abandoned mutex is acquired safely after an unexpected process exit.
+$postTrainingMutex = [Threading.Mutex]::new(
+    $false,
+    "Local\PancreasMultitaskPostTraining501Fold0"
+)
+$postTrainingMutexOwned = $false
+try {
+    try {
+        $postTrainingMutexOwned = $postTrainingMutex.WaitOne(0)
+    }
+    catch [Threading.AbandonedMutexException] {
+        $postTrainingMutexOwned = $true
+    }
+    if (-not $postTrainingMutexOwned) {
+        throw "Another rescue/evaluation process already owns the post-training mutex."
+    }
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $setupScript = Join-Path $PSScriptRoot "Set-QuizEnvironment.ps1"
@@ -67,15 +87,6 @@ if ($activeRescue) {
     throw "A classification rescue is already active (PID(s): $processIds)."
 }
 
-# The Python lock is removed normally in a finally block. A hard power/process
-# loss can leave it behind; after proving that no rescue process exists, remove
-# only this exact direct-child lock so a checkpointed run can resume.
-$lockPath = "$resolvedOutput.lock"
-if (Test-Path -LiteralPath $lockPath -PathType Leaf) {
-    Remove-Item -LiteralPath $lockPath -Force
-    Write-Warning "Removed stale classification-rescue lock: $lockPath"
-}
-
 if ($Resume -and -not (Test-Path -LiteralPath $resolvedOutput -PathType Leaf)) {
     throw "Resume requested but output checkpoint is missing: $resolvedOutput"
 }
@@ -128,4 +139,11 @@ if ($LASTEXITCODE -ne 0) {
     RescueCheckpoint = $resolvedOutput
     Audit = $auditPath
     Resumed = [bool]$Resume
+}
+}
+finally {
+    if ($postTrainingMutexOwned) {
+        $postTrainingMutex.ReleaseMutex()
+    }
+    $postTrainingMutex.Dispose()
 }

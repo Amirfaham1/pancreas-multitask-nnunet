@@ -349,6 +349,7 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
         completed_epochs = 0
         history: list[dict[str, Any]] = []
         resume_state: dict[str, Any] | None = None
+        repair_completed_audit = False
         if args.resume:
             resume_checkpoint = torch.load(
                 output_path,
@@ -363,8 +364,7 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
                 source_checkpoint_sha256=source_file_hash,
                 schedule=schedule,
             )
-            if completed_epochs == schedule.epochs:
-                raise RuntimeError("The classification rescue schedule is already complete")
+            repair_completed_audit = completed_epochs == schedule.epochs
             strict_load_network_weights(model, resume_checkpoint)
             resumed_hashes = component_hashes(model)
             if resumed_hashes != raw_resume_state["current_component_sha256"]:
@@ -386,6 +386,8 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
                 raise RuntimeError("Classification reset changed decoder state")
             if reset_hashes["classification"] == immutable_before_reset["classification"]:
                 raise RuntimeError("Classification reset did not change classification state")
+
+        latest_rescue_state = resume_state
 
         trainable_items = freeze_for_classification_rescue(model)
         trainable_parameters = [parameter for _, parameter in trainable_items]
@@ -552,6 +554,7 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
                 "rng_state": capture_rng_state(include_cuda=device.type == "cuda"),
                 "elapsed_seconds": time.perf_counter() - wall_start,
             }
+            latest_rescue_state = rescue_state
             output_checkpoint = build_inference_checkpoint(
                 source_metadata,
                 model,
@@ -574,6 +577,16 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
             raise RuntimeError("Final encoder hash differs from the source checkpoint")
         if final_hashes["decoder"] != source_component_hashes["decoder"]:
             raise RuntimeError("Final decoder hash differs from the source checkpoint")
+
+        if repair_completed_audit:
+            if latest_rescue_state is None or latest_rescue_state.get("status") != "complete":
+                raise RuntimeError("Completed rescue checkpoint lacks a complete embedded audit")
+            public_audit = _public_audit(latest_rescue_state)
+            public_audit["output_checkpoint_sha256"] = file_sha256(output_path)
+            public_audit["audit_repaired_from_complete_checkpoint"] = True
+            public_audit["updated_at_utc"] = datetime.now(UTC).isoformat()
+            atomic_write_json(public_audit, audit_path)
+            print("RESCUE_AUDIT_REPAIRED=true", flush=True)
 
     print(f"RESCUE_CHECKPOINT={output_path}")
     print(f"RESCUE_AUDIT={audit_path}")

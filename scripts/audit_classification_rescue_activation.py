@@ -34,6 +34,11 @@ def run(checkpoint_path: Path, output_path: Path) -> dict:
         raise ValueError("Activation audit requires an existing checkpoint_final.pth")
     if checkpoint == output:
         raise ValueError("Audit output must differ from the source checkpoint")
+    if output.exists():
+        raise FileExistsError(
+            "Activation audit already exists and is immutable; refusing to replace it: "
+            f"{output}"
+        )
 
     source_hash = file_sha256(checkpoint)
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
