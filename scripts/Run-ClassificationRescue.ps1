@@ -2,6 +2,7 @@
 param(
     [string]$WorkRoot = "D:\MLQuizWork",
     [string]$OutputCheckpoint = "",
+    [string]$RecoveryAudit = "",
     [switch]$Resume
 )
 
@@ -26,6 +27,12 @@ try {
     if (-not $postTrainingMutexOwned) {
         throw "Another rescue/evaluation process already owns the post-training mutex."
     }
+    if ($Resume) {
+        throw (
+            "Resuming this fixed rescue is prohibited: provenance permits exactly " +
+            "one uninterrupted update-bearing trajectory."
+        )
+    }
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $setupScript = Join-Path $PSScriptRoot "Set-QuizEnvironment.ps1"
@@ -41,6 +48,19 @@ $resolvedSource = [System.IO.Path]::GetFullPath(
 $activationAudit = Join-Path $resolvedFoldDirectory (
     "classification_rescue_activation.json"
 )
+$recoveryAuditExplicit = -not [string]::IsNullOrWhiteSpace($RecoveryAudit)
+if ([string]::IsNullOrWhiteSpace($RecoveryAudit)) {
+    $RecoveryAudit = Join-Path $resolvedFoldDirectory (
+        "classification_rescue_zero_update_recovery.json"
+    )
+}
+$resolvedRecoveryAudit = ""
+if (Test-Path -LiteralPath $RecoveryAudit -PathType Leaf) {
+    $resolvedRecoveryAudit = [System.IO.Path]::GetFullPath($RecoveryAudit)
+}
+elseif ($recoveryAuditExplicit) {
+    throw "Explicit zero-update execution-recovery audit is missing: $RecoveryAudit"
+}
 if ([string]::IsNullOrWhiteSpace($OutputCheckpoint)) {
     $OutputCheckpoint = Join-Path $resolvedFoldDirectory (
         "checkpoint_classification_rescue.pth"
@@ -63,6 +83,16 @@ if ([System.IO.Path]::GetDirectoryName($resolvedSource) -ne $resolvedFoldDirecto
 }
 if ([System.IO.Path]::GetDirectoryName($resolvedOutput) -ne $resolvedFoldDirectory) {
     throw "Output checkpoint must be a direct child of the production fold directory."
+}
+if (-not [string]::IsNullOrWhiteSpace($resolvedRecoveryAudit)) {
+    if ([System.IO.Path]::GetDirectoryName($resolvedRecoveryAudit) -ne
+        $resolvedFoldDirectory) {
+        throw "Recovery audit must be a direct child of the production fold directory."
+    }
+    if ([System.IO.Path]::GetFileName($resolvedRecoveryAudit) -cne
+        "classification_rescue_zero_update_recovery.json") {
+        throw "Recovery audit has an unexpected filename: $resolvedRecoveryAudit"
+    }
 }
 if ($resolvedSource -eq $resolvedOutput) {
     throw "Source and output checkpoints must differ."
@@ -87,11 +117,19 @@ if ($activeRescue) {
     throw "A classification rescue is already active (PID(s): $processIds)."
 }
 
-if ($Resume -and -not (Test-Path -LiteralPath $resolvedOutput -PathType Leaf)) {
-    throw "Resume requested but output checkpoint is missing: $resolvedOutput"
+if (Test-Path -LiteralPath $resolvedOutput) {
+    throw "Output checkpoint already exists; this fixed rescue cannot restart or resume."
 }
-if (-not $Resume -and (Test-Path -LiteralPath $resolvedOutput)) {
-    throw "Output checkpoint already exists; use -Resume only to continue it."
+
+if (-not [string]::IsNullOrWhiteSpace($resolvedRecoveryAudit)) {
+    $recoveryTool = Join-Path $PSScriptRoot "classification_rescue_recovery.py"
+    & $python $recoveryTool validate `
+        --recovery-audit $resolvedRecoveryAudit `
+        --source-checkpoint $resolvedSource `
+        --activation-audit $activationAudit
+    if ($LASTEXITCODE -ne 0) {
+        throw "Zero-update execution-recovery provenance failed validation."
+    }
 }
 
 Set-ExecutionPolicy -Scope Process Bypass -Force
@@ -124,10 +162,9 @@ $arguments = @(
     "--expected-validation-cases", "36",
     "--save-every", "1"
 )
-if ($Resume) {
-    $arguments += "--resume"
+if (-not [string]::IsNullOrWhiteSpace($resolvedRecoveryAudit)) {
+    $arguments += @("--recovery-audit", $resolvedRecoveryAudit)
 }
-
 Set-Location -LiteralPath $repoRoot
 & $python @arguments
 if ($LASTEXITCODE -ne 0) {
@@ -138,7 +175,12 @@ if ($LASTEXITCODE -ne 0) {
     SourceCheckpoint = $resolvedSource
     RescueCheckpoint = $resolvedOutput
     Audit = $auditPath
-    Resumed = [bool]$Resume
+    RecoveryAudit = if ([string]::IsNullOrWhiteSpace($resolvedRecoveryAudit)) {
+        $null
+    } else {
+        $resolvedRecoveryAudit
+    }
+    Resumed = $false
 }
 }
 finally {

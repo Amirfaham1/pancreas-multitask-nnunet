@@ -24,6 +24,7 @@ import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from pancreas_multitask.classification_rescue import (
     RESCUE_SCHEMA_VERSION,
@@ -59,6 +60,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-checkpoint", type=Path, required=True)
     parser.add_argument("--activation-audit", type=Path, required=True)
     parser.add_argument(
+        "--recovery-audit",
+        type=Path,
+        help=(
+            "Optional immutable evidence for a realized zero-update numerical recovery. "
+            "Omit on a genuinely clean first process launch."
+        ),
+    )
+    parser.add_argument(
         "--audit-json",
         type=Path,
         help="Default: <output-checkpoint>.audit.json",
@@ -83,12 +92,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--save-every",
         type=int,
         default=1,
-        help="Write a resumable inference checkpoint every N completed epochs.",
+        help="Write an auditable interruption snapshot every N completed epochs.",
     )
     parser.add_argument(
         "--resume",
         action="store_true",
-        help="Continue the same frozen schedule from output-checkpoint.",
+        help=(
+            "Rejected by this fixed protocol, which permits one uninterrupted "
+            "update-bearing trajectory."
+        ),
     )
     return parser
 
@@ -106,10 +118,35 @@ def _schedule_from_args(args: argparse.Namespace) -> RescueSchedule:
     )
 
 
-def _resolved_paths(args: argparse.Namespace) -> tuple[Path, Path, Path, Path]:
+def _precision_policy(device: torch.device) -> dict[str, str | bool]:
+    """Describe the fixed numerical boundary used by the rescue update."""
+
+    return {
+        "autocast_scope": "frozen_encoder_forward_only",
+        "frozen_encoder_forward": ("cuda_autocast_float16" if device.type == "cuda" else "float32"),
+        "trainable_classification_forward": "float32",
+        "classification_loss": "float32",
+        "classification_backward": "float32",
+        "gradient_clipping": "float32",
+        "optimizer_update": "float32",
+        "grad_scaler_enabled": False,
+    }
+
+
+def _resolved_paths(
+    args: argparse.Namespace,
+) -> tuple[Path, Path, Path, Path, Path | None]:
+    if args.resume:
+        raise ValueError(
+            "Resuming this fixed rescue is prohibited: the provenance contract allows "
+            "exactly one uninterrupted update-bearing trajectory"
+        )
     source = args.source_checkpoint.expanduser().resolve()
     output = args.output_checkpoint.expanduser().resolve()
     activation_audit = args.activation_audit.expanduser().resolve()
+    recovery_audit = (
+        args.recovery_audit.expanduser().resolve() if args.recovery_audit is not None else None
+    )
     audit = (
         args.audit_json.expanduser().resolve()
         if args.audit_json is not None
@@ -119,25 +156,72 @@ def _resolved_paths(args: argparse.Namespace) -> tuple[Path, Path, Path, Path]:
         raise ValueError("source-checkpoint and output-checkpoint must be different files")
     if audit in (source, output):
         raise ValueError("audit-json must be different from both checkpoint paths")
-    if activation_audit in (source, output, audit):
+    if activation_audit in (source, output, audit) or activation_audit == recovery_audit:
         raise ValueError("activation-audit must be a separate JSON file")
+    if recovery_audit is not None and recovery_audit in (source, output, audit, activation_audit):
+        raise ValueError("recovery-audit must be a separate JSON file")
     if not source.is_file():
         raise FileNotFoundError(f"Source checkpoint does not exist: {source}")
     if source.name != "checkpoint_final.pth":
         raise ValueError(
             f"The predeclared rescue source must be named checkpoint_final.pth; got {source.name!r}"
         )
+    canonical_recovery_audit = source.with_name("classification_rescue_zero_update_recovery.json")
+    if recovery_audit is None and canonical_recovery_audit.is_file():
+        raise ValueError(
+            "Canonical execution-recovery evidence exists beside the source checkpoint; "
+            "pass it explicitly with --recovery-audit"
+        )
     if not activation_audit.is_file():
         raise FileNotFoundError(f"Activation audit does not exist: {activation_audit}")
+    if recovery_audit is not None:
+        if not recovery_audit.is_file():
+            raise FileNotFoundError(f"Execution recovery audit does not exist: {recovery_audit}")
+        if recovery_audit.name != "classification_rescue_zero_update_recovery.json":
+            raise ValueError(
+                "Execution recovery audit must use the declared filename "
+                "classification_rescue_zero_update_recovery.json"
+            )
+        if recovery_audit.parent != source.parent:
+            raise ValueError(
+                "Execution recovery audit must be a direct child of the source fold directory"
+            )
     if args.save_every < 1:
         raise ValueError("save-every must be positive")
-    if output.exists() and not args.resume:
+    if output.exists():
         raise FileExistsError(
-            f"Output already exists; use --resume only for a matching rescue: {output}"
+            f"Output already exists; this fixed rescue cannot be restarted or resumed: {output}"
         )
-    if args.resume and not output.is_file():
-        raise FileNotFoundError(f"Cannot resume because output does not exist: {output}")
-    return source, output, audit, activation_audit
+    return source, output, audit, activation_audit, recovery_audit
+
+
+def _load_execution_recovery(
+    path: Path,
+    *,
+    source_checkpoint: Path,
+    activation_audit: Path,
+) -> tuple[dict[str, Any], str]:
+    """Validate and hash-bind the authorized zero-update recovery artifact."""
+
+    from classification_rescue_recovery import validate_recovery_payload
+
+    hash_before = file_sha256(path)
+    with path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    hash_after = file_sha256(path)
+    if hash_before != hash_after:
+        raise RuntimeError("Execution recovery audit changed while it was being read")
+    if not isinstance(payload, dict):
+        raise TypeError("Execution recovery audit must contain a JSON object")
+    validate_recovery_payload(
+        payload,
+        artifact_path=path,
+        source_checkpoint=source_checkpoint,
+        activation_audit=activation_audit,
+    )
+    if file_sha256(path) != hash_before:
+        raise RuntimeError("Execution recovery audit changed during validation")
+    return payload, hash_before
 
 
 @contextmanager
@@ -285,6 +369,9 @@ def _epoch_summary(results: list[Any], epoch: int, elapsed_seconds: float) -> di
         "training_prediction_counts": [int(value) for value in prediction_counts],
         "gradient_norm_before_clip_mean": float(np.mean(gradient_norms)),
         "gradient_norm_before_clip_max": float(np.max(gradient_norms)),
+        "successful_optimizer_updates": int(
+            sum(result.optimizer_update_count for result in results)
+        ),
         "elapsed_seconds": elapsed_seconds,
         "generalization_metric": False,
     }
@@ -297,7 +384,13 @@ def _public_audit(rescue_state: dict[str, Any]) -> dict[str, Any]:
 
 def run(args: argparse.Namespace) -> tuple[Path, Path]:
     schedule = _schedule_from_args(args)
-    source_path, output_path, audit_path, activation_audit_path = _resolved_paths(args)
+    (
+        source_path,
+        output_path,
+        audit_path,
+        activation_audit_path,
+        recovery_audit_path,
+    ) = _resolved_paths(args)
 
     # This fallback must never append to or create a W&B run, and compilation
     # would complicate strict parameter names/checkpoint portability.
@@ -319,8 +412,31 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
 
     source_file_hash = file_sha256(source_path)
     activation_audit_file_hash = file_sha256(activation_audit_path)
+    execution_recovery: dict[str, Any] | None = None
+    recovery_audit_file_hash: str | None = None
+    if recovery_audit_path is not None:
+        execution_recovery, recovery_audit_file_hash = _load_execution_recovery(
+            recovery_audit_path,
+            source_checkpoint=source_path,
+            activation_audit=activation_audit_path,
+        )
+    execution_provenance: dict[str, Any] = {
+        "process_launch_count": 2 if execution_recovery is not None else 1,
+        "zero_update_recovery_count": 1 if execution_recovery is not None else 0,
+        "update_bearing_trajectory_count": 1,
+    }
+    if execution_recovery is not None:
+        execution_provenance.update(
+            {
+                "execution_recovery": execution_recovery,
+                "execution_recovery_audit": str(recovery_audit_path),
+                "execution_recovery_audit_sha256": recovery_audit_file_hash,
+            }
+        )
     with activation_audit_path.open("r", encoding="utf-8") as handle:
         activation_audit = json.load(handle)
+    if file_sha256(activation_audit_path) != activation_audit_file_hash:
+        raise RuntimeError("Activation audit changed while it was being read")
     if not isinstance(activation_audit, dict):
         raise TypeError("Activation audit must contain a JSON object")
     validate_activation_audit(
@@ -344,6 +460,8 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
         model = trainer.network
 
         source_checkpoint = torch.load(source_path, map_location="cpu", weights_only=False)
+        if file_sha256(source_path) != source_file_hash:
+            raise RuntimeError("Source checkpoint changed while it was being loaded")
         if source_checkpoint.get("trainer_name") != args.trainer:
             raise ValueError(
                 "Source checkpoint trainer mismatch: "
@@ -382,6 +500,7 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
         del source_checkpoint
 
         completed_epochs = 0
+        successful_optimizer_updates = 0
         history: list[dict[str, Any]] = []
         resume_state: dict[str, Any] | None = None
         repair_completed_audit = False
@@ -414,6 +533,7 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
                 raise ValueError("Resume decoder does not match the frozen source decoder")
             resume_state = raw_resume_state
             history = list(raw_resume_state.get("training_only_history", []))
+            successful_optimizer_updates = int(raw_resume_state["successful_optimizer_updates"])
             original_started_at = str(raw_resume_state["started_at_utc"])
             prior_elapsed_seconds = float(raw_resume_state["elapsed_seconds"])
             resume_count = int(raw_resume_state["resume_count"])
@@ -438,21 +558,22 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
         trainable_parameters = [parameter for _, parameter in trainable_items]
         if resume_state is not None and resume_state.get("device_type") != device.type:
             raise ValueError("Resume device type differs from the original rescue")
+        precision_policy = _precision_policy(device)
         optimizer = torch.optim.AdamW(
             trainable_parameters,
             lr=schedule.learning_rate,
             weight_decay=schedule.weight_decay,
         )
-        scaler = torch.GradScaler(
-            device.type,
-            enabled=device.type == "cuda",
-        )
+        scaler = torch.GradScaler(device.type, enabled=False)
         if resume_state is not None:
             optimizer.load_state_dict(resume_state["optimizer_state"])
             _optimizer_state_to_device(optimizer, device)
             grad_scaler_state = resume_state.get("grad_scaler_state")
             if grad_scaler_state is not None:
-                scaler.load_state_dict(grad_scaler_state)
+                raise ValueError(
+                    "Resume checkpoint unexpectedly contains GradScaler state for the "
+                    "trainable-float32 precision policy"
+                )
 
         training_loader, training_keys, validation_keys = _build_training_only_dataloader(trainer)
         split_audit = validate_disjoint_split(
@@ -495,11 +616,13 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
             "activation_audit": str(activation_audit_path),
             "activation_audit_sha256": activation_audit_file_hash,
             "activation_decision_epoch": activation_audit["decision_epoch"],
+            **execution_provenance,
             "source_component_sha256": source_component_hashes,
             "output_checkpoint": str(output_path),
             "schedule": schedule.to_dict(),
             "optimizer": "AdamW",
             "device_type": device.type,
+            "precision_policy": precision_policy,
             "wandb_enabled": False,
             "early_stopping": False,
             "maximum_attempts": 1,
@@ -527,6 +650,8 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
                 "training_class_counts": [int(value) for value in class_counts],
                 "training_class_weights": [float(value) for value in class_weights_array],
                 "device_type": device.type,
+                "precision_policy": precision_policy,
+                **execution_provenance,
                 "training_loader": "single_threaded_training_split_only",
                 "training_batch_size": int(trainer.batch_size),
                 "classification_parameter_names": [name for name, _ in trainable_items],
@@ -567,29 +692,43 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
                     dtype=torch.long,
                     device=device,
                 )
-                step_results.append(
-                    classification_rescue_train_step(
-                        model,
-                        data,
-                        targets,
-                        highest_resolution_target,
-                        optimizer=optimizer,
-                        class_weights=class_weights,
-                        schedule=schedule,
-                        scaler=scaler,
-                        use_amp=device.type == "cuda",
-                        num_classes=NUM_CLASSIFICATION_CLASSES,
+                step_result = classification_rescue_train_step(
+                    model,
+                    data,
+                    targets,
+                    highest_resolution_target,
+                    optimizer=optimizer,
+                    class_weights=class_weights,
+                    schedule=schedule,
+                    scaler=scaler,
+                    use_encoder_amp=device.type == "cuda",
+                    num_classes=NUM_CLASSIFICATION_CLASSES,
+                )
+                if step_result.optimizer_update_count != 1:
+                    raise RuntimeError(
+                        "A clean rescue step must execute exactly one optimizer update"
                     )
-                )
+                successful_optimizer_updates += step_result.optimizer_update_count
+                step_results.append(step_result)
 
-            history.append(
-                _epoch_summary(
-                    step_results,
-                    epoch,
-                    time.perf_counter() - epoch_start,
-                )
+            epoch_record = _epoch_summary(
+                step_results,
+                epoch,
+                time.perf_counter() - epoch_start,
             )
+            if epoch_record["successful_optimizer_updates"] != schedule.iterations_per_epoch:
+                raise RuntimeError(
+                    "A completed rescue epoch must contain exactly "
+                    f"{schedule.iterations_per_epoch} successful optimizer updates"
+                )
+            history.append(epoch_record)
             completed_epochs = epoch + 1
+            expected_completed_updates = completed_epochs * schedule.iterations_per_epoch
+            if successful_optimizer_updates != expected_completed_updates:
+                raise RuntimeError(
+                    "Cumulative successful optimizer updates do not match completed epochs: "
+                    f"{successful_optimizer_updates} != {expected_completed_updates}"
+                )
             should_save = (
                 completed_epochs % args.save_every == 0 or completed_epochs == schedule.epochs
             )
@@ -602,10 +741,37 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
             if current_hashes["decoder"] != source_component_hashes["decoder"]:
                 raise RuntimeError("Frozen decoder state changed during rescue")
             status = "complete" if completed_epochs == schedule.epochs else "in_progress"
+            canonical_recovery_audit = source_path.with_name(
+                "classification_rescue_zero_update_recovery.json"
+            )
+            if execution_recovery is None:
+                if canonical_recovery_audit.is_file():
+                    raise RuntimeError(
+                        "Canonical execution-recovery evidence appeared during a clean "
+                        "rescue trajectory"
+                    )
+            else:
+                if recovery_audit_path is None:
+                    raise RuntimeError(
+                        "Recovered rescue trajectory lost its recovery-audit binding"
+                    )
+                final_recovery, final_recovery_hash = _load_execution_recovery(
+                    recovery_audit_path,
+                    source_checkpoint=source_path,
+                    activation_audit=activation_audit_path,
+                )
+                if (
+                    final_recovery != execution_recovery
+                    or final_recovery_hash != recovery_audit_file_hash
+                ):
+                    raise RuntimeError(
+                        "Execution recovery evidence changed during rescue execution"
+                    )
             rescue_state = {
                 **audit_base,
                 "status": status,
                 "completed_epochs": completed_epochs,
+                "successful_optimizer_updates": successful_optimizer_updates,
                 "training_only_history": history,
                 "current_component_sha256": current_hashes,
                 "optimizer_state": optimizer.state_dict(),
@@ -636,6 +802,12 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
             raise RuntimeError("Final encoder hash differs from the source checkpoint")
         if final_hashes["decoder"] != source_component_hashes["decoder"]:
             raise RuntimeError("Final decoder hash differs from the source checkpoint")
+        expected_total_updates = schedule.epochs * schedule.iterations_per_epoch
+        if successful_optimizer_updates != expected_total_updates:
+            raise RuntimeError(
+                "Completed rescue did not execute the declared number of optimizer updates: "
+                f"{successful_optimizer_updates} != {expected_total_updates}"
+            )
 
         if repair_completed_audit:
             if latest_rescue_state is None or latest_rescue_state.get("status") != "complete":

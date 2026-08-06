@@ -92,6 +92,9 @@ $modelRoot = Join-Path $resolvedWorkRoot (
 )
 $foldDirectory = Join-Path $modelRoot "fold_0"
 $activationAuditPath = Join-Path $foldDirectory "classification_rescue_activation.json"
+$recoveryAuditPath = Join-Path $foldDirectory (
+    "classification_rescue_zero_update_recovery.json"
+)
 $rescueCheckpointPath = Join-Path $foldDirectory "checkpoint_classification_rescue.pth"
 $rescueAuditPath = "$rescueCheckpointPath.audit.json"
 
@@ -125,6 +128,9 @@ $setupScript = Join-Path $PSScriptRoot "Set-QuizEnvironment.ps1"
 $predictionScript = Join-Path $PSScriptRoot "predict_joint.py"
 $packageScript = Join-Path $PSScriptRoot "Package-Submission.ps1"
 $validatorScript = Join-Path $PSScriptRoot "validate_submission.py"
+$recoveryValidationScript = Join-Path $PSScriptRoot (
+    "classification_rescue_recovery.py"
+)
 
 $probabilityCsv = Join-Path $resolvedEvidenceDirectory "subtype_probabilities.csv"
 $runtimeJson = Join-Path $resolvedEvidenceDirectory "runtime.json"
@@ -532,6 +538,7 @@ try {
         $predictionScript,
         $packageScript,
         $validatorScript,
+        $recoveryValidationScript,
         $resolvedSelectionPath,
         $activationAuditPath
     )) {
@@ -709,6 +716,48 @@ try {
         ) "training_batch_size" "Rescue audit") -ne 2) {
             throw "Rescue training batch size must be 2."
         }
+        $precisionPolicy = Get-RequiredJsonProperty `
+            $rescueAudit "precision_policy" "Rescue audit"
+        $expectedPrecisionPolicy = [ordered]@{
+            autocast_scope = "frozen_encoder_forward_only"
+            frozen_encoder_forward = "cuda_autocast_float16"
+            trainable_classification_forward = "float32"
+            classification_loss = "float32"
+            classification_backward = "float32"
+            gradient_clipping = "float32"
+            optimizer_update = "float32"
+        }
+        foreach ($precisionName in $expectedPrecisionPolicy.Keys) {
+            if ([string] (Get-RequiredJsonProperty (
+                $precisionPolicy
+            ) $precisionName "Rescue precision policy") -cne
+                [string] $expectedPrecisionPolicy[$precisionName]) {
+                throw "Rescue precision policy differs at '$precisionName'."
+            }
+        }
+        Assert-FalseJsonProperty `
+            $precisionPolicy "grad_scaler_enabled" "Rescue precision policy"
+        if ([int] (Get-RequiredJsonProperty (
+            $rescueAudit
+        ) "successful_optimizer_updates" "Rescue audit") -ne 3750) {
+            throw "Rescue audit must record exactly 3,750 successful optimizer updates."
+        }
+        $trainingOnlyHistory = @(
+            Get-RequiredJsonProperty `
+                $rescueAudit "training_only_history" "Rescue audit"
+        )
+        if ($trainingOnlyHistory.Count -ne 30) {
+            throw "Rescue audit training_only_history must contain exactly 30 epochs."
+        }
+        for ($epochIndex = 0; $epochIndex -lt 30; $epochIndex++) {
+            $epochDescription = "Rescue training-only history epoch $epochIndex"
+            $epochRecord = $trainingOnlyHistory[$epochIndex]
+            if ([int] (Get-RequiredJsonProperty (
+                $epochRecord
+            ) "successful_optimizer_updates" $epochDescription) -ne 125) {
+                throw "$epochDescription must record exactly 125 successful optimizer updates."
+            }
+        }
         if ([int] (Get-RequiredJsonProperty (
             $rescueAudit
         ) "maximum_attempts" "Rescue audit") -ne 1) {
@@ -752,6 +801,54 @@ try {
             -RecordedValue $rescueOutputCheckpointSha256 `
             -ActualValue $rescueCheckpointSha256 `
             -Description "Rescue audit output checkpoint SHA-256"
+        $processLaunchCount = [int] (Get-RequiredJsonProperty `
+            $rescueAudit "process_launch_count" "Rescue audit")
+        $zeroUpdateRecoveryCount = [int] (Get-RequiredJsonProperty `
+            $rescueAudit "zero_update_recovery_count" "Rescue audit")
+        $updateBearingTrajectoryCount = [int] (Get-RequiredJsonProperty `
+            $rescueAudit "update_bearing_trajectory_count" "Rescue audit")
+        if ($updateBearingTrajectoryCount -ne 1) {
+            throw "Rescue audit must record exactly one update-bearing trajectory."
+        }
+        $recoveryBindingFields = @(
+            "execution_recovery",
+            "execution_recovery_audit",
+            "execution_recovery_audit_sha256"
+        )
+        if ($processLaunchCount -eq 1 -and $zeroUpdateRecoveryCount -eq 0) {
+            foreach ($field in $recoveryBindingFields) {
+                if ($null -ne $rescueAudit.PSObject.Properties[$field]) {
+                    throw "Clean rescue audit must not fabricate recovery field '$field'."
+                }
+            }
+            if (Test-Path -LiteralPath $recoveryAuditPath) {
+                throw "Clean rescue branch conflicts with a canonical recovery artifact."
+            }
+        }
+        elseif ($processLaunchCount -eq 2 -and $zeroUpdateRecoveryCount -eq 1) {
+            Assert-LeafFile `
+                -Path $recoveryAuditPath `
+                -Description "Zero-update execution-recovery audit"
+            $recoveryValidationMessages = @(
+                & $resolvedPython $recoveryValidationScript validate `
+                    --recovery-audit $recoveryAuditPath `
+                    --source-checkpoint (Join-Path $foldDirectory "checkpoint_final.pth") `
+                    --activation-audit $activationAuditPath `
+                    --rescue-audit $rescueAuditPath 2>&1
+            )
+            if ($LASTEXITCODE -ne 0) {
+                throw (
+                    "Classification-rescue execution-recovery provenance failed validation: " +
+                    ($recoveryValidationMessages -join [Environment]::NewLine)
+                )
+            }
+        }
+        else {
+            throw (
+                "Rescue process/recovery counts must be the clean 1/0 branch or " +
+                "the canonical recovered 2/1 branch."
+            )
+        }
         if ([int] (Get-RequiredJsonProperty (
             $rescueAudit
         ) "activation_decision_epoch" "Rescue audit") -ne

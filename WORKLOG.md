@@ -17,6 +17,7 @@ This log separates measured evidence from plans. `PENDING` means the artifact do
 | D-009 | Compare final, native segmentation-best, and multitask-best checkpoints on all 36 cases. | Online subtype validation samples random patches and incomplete case coverage; it is unsuitable as sole final-selection evidence. |
 | D-010 | Do not attempt a TPU port. | nnU-Net's tested path is PyTorch/CUDA; a deadline-night PyTorch/XLA port would add compatibility risk without strengthening the required core submission. |
 | D-011 | Prepare one train-metric-triggered frozen-head rescue from `checkpoint_final.pth`. | After observing collapsed online patch classification, but before any full-volume validation evaluation, freeze a single 30 x 125 AdamW schedule. Activation uses only the predeclared epoch-40/50 training CE/accuracy rule; validation cannot activate or alter it. |
+| D-012 | Permit one disclosed zero-update numerical execution recovery, but only before custom joint fixed validation. | The first rescue process failed on batch 1 after the finite-loss guard and before `AdamW.step`; it made zero updates and wrote no checkpoint. Preserve/hash both logs, retain one update-bearing trajectory, keep every model/schedule choice fixed, move only the trainable classification path to FP32, count two process launches, and prohibit any further recovery. |
 
 ## 2026-08-05 — Source audit and conversion
 
@@ -154,7 +155,7 @@ already been observed, so the contingency is described precisely as frozen
 before full-volume validation evaluation, not before all validation
 observation. `configs/experiment.yaml` and
 `docs/classification_head_rescue.md` predeclare a train-only epoch-40/50 gate,
-fixed `checkpoint_final.pth` source, one 30 x 125 AdamW attempt, frozen
+fixed `checkpoint_final.pth` source, one 30 x 125 update-bearing AdamW trajectory, frozen
 encoder/decoder, and no validation batches, stopping, or schedule changes.
 
 Epoch 40 completed at 2026-08-05 20:59:46 EDT, after the rescue protocol and
@@ -176,9 +177,35 @@ history will stay in its immutable audit JSON rather than being appended as
 epochs 200--229, because the optimizer, trainable parameter scope, and metric
 semantics differ and the rescue deliberately consumes zero validation batches.
 
+The completed joint trainer then ran stock nnU-Net segmentation-only validation
+during teardown (`Validation complete` at 2026-08-06 02:15:02 EDT). Its logged
+mean foreground Dice `0.753518646` was observed in monitoring before recovery
+authorization, but it did not drive the numerical repair, schedule, seed, or
+recovery decision. The hash-bound activation audit was
+created at 02:15:07 EDT from
+training metrics only and approved the predeclared epoch-40 gate.
+
+The first rescue process launch failed on its first training batch when
+fail-fast clipping rejected a non-finite gradient norm after AMP unscaling.
+The finite-loss check had passed, while `scaler.step`/`AdamW.step` occurs later,
+so the failed process made zero optimizer updates, completed zero epochs, and
+wrote no rescue checkpoint or rescue audit. The watcher stdout/stderr were
+preserved under `classification_rescue_recovery_evidence/`; their SHA-256
+digests and the source/activation/Git bindings are recorded in
+`classification_rescue_zero_update_recovery.json`.
+
+Before the custom joint fixed-validation candidate pass began, the execution
+policy was amended once: the frozen encoder remains under CUDA autocast, but
+the detached bottleneck and the trainable classification forward/loss/backward,
+clipping, and AdamW update run in FP32 without GradScaler. Source checkpoint,
+reset seed, training keys, augmentation, LR, weight decay, clip threshold, and
+the 3,750-successful-update schedule remain fixed. Provenance counts two process
+launches, one zero-update recovery, and one update-bearing trajectory; another
+recovery is prohibited.
+
 ## 2026-08-06 — Fixed validation
 
-Status: **PENDING training completion**
+Status: **PENDING classification-rescue completion**
 
 Required evidence:
 

@@ -100,6 +100,13 @@ def _write_positive_provenance_fixture(tmp_path: Path) -> dict[str, object]:
 
     rescue_path = checkpoints["checkpoint_classification_rescue"]
     rescue_audit_path = Path(f"{rescue_path}.audit.json")
+    recovery_path = fold / "classification_rescue_zero_update_recovery.json"
+    recovery = {
+        "schema_version": 1,
+        "event": "classification_rescue_zero_update_execution_recovery",
+        "status": "authorized_before_custom_joint_fixed_validation",
+    }
+    recovery_path.write_text(json.dumps(recovery), encoding="utf-8")
     rescue_audit = {
         "schema_version": 1,
         "method": "post_training_frozen_backbone_classification_head_rescue",
@@ -116,6 +123,17 @@ def _write_positive_provenance_fixture(tmp_path: Path) -> dict[str, object]:
             "reset_seed": 20260806,
         },
         "optimizer": "AdamW",
+        "precision_policy": {
+            "autocast_scope": "frozen_encoder_forward_only",
+            "frozen_encoder_forward": "cuda_autocast_float16",
+            "trainable_classification_forward": "float32",
+            "classification_loss": "float32",
+            "classification_backward": "float32",
+            "gradient_clipping": "float32",
+            "optimizer_update": "float32",
+            "grad_scaler_enabled": False,
+        },
+        "successful_optimizer_updates": 3750,
         "device_type": "cuda",
         "training_loader": "single_threaded_training_split_only",
         "training_batch_size": 2,
@@ -133,6 +151,12 @@ def _write_positive_provenance_fixture(tmp_path: Path) -> dict[str, object]:
         "activation_audit_sha256": _sha256(activation_path),
         "output_checkpoint_sha256": _sha256(rescue_path),
         "activation_decision_epoch": 40,
+        "process_launch_count": 2,
+        "zero_update_recovery_count": 1,
+        "update_bearing_trajectory_count": 1,
+        "execution_recovery": recovery,
+        "execution_recovery_audit": str(recovery_path.resolve()),
+        "execution_recovery_audit_sha256": _sha256(recovery_path),
         "source_component_sha256": {
             "encoder": "1" * 64,
             "decoder": "2" * 64,
@@ -163,6 +187,9 @@ def _write_positive_provenance_fixture(tmp_path: Path) -> dict[str, object]:
             "validation_case_ids_sha256": "6" * 64,
             "frozen_manifest_validation_case_ids_sha256": "6" * 64,
         },
+        "training_only_history": [
+            {"epoch": epoch, "successful_optimizer_updates": 125} for epoch in range(30)
+        ],
     }
     rescue_audit_path.write_text(json.dumps(rescue_audit), encoding="utf-8")
 
@@ -218,7 +245,11 @@ def _write_positive_provenance_fixture(tmp_path: Path) -> dict[str, object]:
 
     fake_python = tmp_path / "fake-python.cmd"
     fake_python.write_text(
-        '@echo off\r\n>>"%SELECTED_TEST_CHECKPOINT_TO_MUTATE%" echo changed\r\nexit /b 0\r\n',
+        "@echo off\r\n"
+        'if /I "%~nx1"=="predict_joint.py" if defined '
+        "SELECTED_TEST_CHECKPOINT_TO_MUTATE "
+        '>>"%SELECTED_TEST_CHECKPOINT_TO_MUTATE%" echo changed\r\n'
+        "exit /b 0\r\n",
         encoding="utf-8",
     )
     return {
@@ -369,6 +400,14 @@ def test_full_rescue_protocol_and_selection_hash_chain_are_fail_closed() -> None
     assert (
         protocol_gate < component_gate < split_gate < ranking_gate < transitive_gate < first_output
     )
+
+
+def test_rescue_provenance_accepts_only_clean_or_canonical_recovery_branch() -> None:
+    assert "$processLaunchCount -eq 1 -and $zeroUpdateRecoveryCount -eq 0" in SOURCE
+    assert "$processLaunchCount -eq 2 -and $zeroUpdateRecoveryCount -eq 1" in SOURCE
+    assert "Clean rescue audit must not fabricate recovery field" in SOURCE
+    assert "Clean rescue branch conflicts with a canonical recovery artifact" in SOURCE
+    assert "exactly one update-bearing trajectory" in SOURCE
 
 
 @pytest.mark.skipif(os.name != "nt", reason="The production wrapper targets Windows")

@@ -209,6 +209,26 @@ path from `checkpoint_final.pth`; validation cannot activate, stop, or alter it.
 The three original checkpoints, plus the rescue only when activated, are then
 compared once on the complete fixed validation set before test inference.
 
+The first activated rescue process later failed on batch 1 before its first
+optimizer update. This is recorded as a zero-update numerical execution
+recovery, not hidden as an uninterrupted run: both failed logs are preserved
+and hash-bound in `classification_rescue_zero_update_recovery.json`, the
+relaunch is process launch 2 but update-bearing trajectory 1, and no further
+recovery is allowed. Stock nnU-Net segmentation-only teardown validation had
+completed, and its mean foreground Dice `0.753518646` was observed in monitoring
+before authorization but did not drive the numerical repair or recovery; the
+custom joint candidate pass had not started. The frozen encoder still uses CUDA
+autocast, while the detached trainable classification path runs in FP32 without
+GradScaler. Seed, data, optimizer hyperparameters, and the 3,750-update schedule
+remain unchanged.
+
+The recovery record is conditional for reproducibility: a genuinely clean
+future rescue run with no canonical recovery artifact records counts `1/0/1`
+(process launches / zero-update recoveries / update-bearing trajectories) and
+contains no recovery fields. This realized run auto-detects and strictly binds
+the canonical artifact and therefore records `2/1/1`; no fabricated clean-run
+failure is required by the generic pipeline.
+
 Model checkpoints are not committed because they are large and can embed local
 provenance. The evaluated checkpoint hash and exact reproduction configuration
 are reported; access to weights can be provided to the reviewer if permitted.

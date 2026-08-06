@@ -784,6 +784,196 @@ def _validate_component_hashes(value: Any, *, field: str) -> dict[str, str]:
     }
 
 
+def _validate_execution_recovery(
+    rescue: Mapping[str, Any],
+    *,
+    activation: Mapping[str, Any],
+    activation_artifact_sha256: str,
+) -> dict[str, Any]:
+    process_launch_count = _integer(
+        rescue.get("process_launch_count"), field="rescue.process_launch_count", minimum=1
+    )
+    zero_update_recovery_count = _integer(
+        rescue.get("zero_update_recovery_count"),
+        field="rescue.zero_update_recovery_count",
+        minimum=0,
+    )
+    update_bearing_trajectory_count = _integer(
+        rescue.get("update_bearing_trajectory_count"),
+        field="rescue.update_bearing_trajectory_count",
+        minimum=1,
+    )
+    if update_bearing_trajectory_count != 1:
+        raise EvidenceError("Rescue must contain exactly one update-bearing trajectory")
+    recovery_binding_fields = (
+        "execution_recovery",
+        "execution_recovery_audit",
+        "execution_recovery_audit_sha256",
+    )
+    if (process_launch_count, zero_update_recovery_count) == (1, 0):
+        fabricated = [name for name in recovery_binding_fields if name in rescue]
+        if fabricated:
+            raise EvidenceError(
+                "Clean rescue branch must not contain recovery fields: " + ", ".join(fabricated)
+            )
+        source_checkpoint_raw = rescue.get("source_checkpoint")
+        if not isinstance(source_checkpoint_raw, str) or not source_checkpoint_raw.strip():
+            raise EvidenceError("rescue.source_checkpoint must be a non-empty path")
+        canonical_recovery_audit = (
+            Path(source_checkpoint_raw)
+            .resolve()
+            .with_name("classification_rescue_zero_update_recovery.json")
+        )
+        if canonical_recovery_audit.is_file():
+            raise EvidenceError("Clean rescue branch conflicts with a canonical recovery artifact")
+        return {
+            "artifact": None,
+            "failed_launch_logs": {},
+            "process_launch_count": 1,
+            "zero_update_recovery_count": 0,
+            "update_bearing_trajectory_count": 1,
+            "failed_launch_optimizer_updates": 0,
+            "failed_launch_training_batches": 0,
+            "rescue_process_validation_batches_consumed": 0,
+        }
+    if (process_launch_count, zero_update_recovery_count) != (2, 1):
+        raise EvidenceError(
+            "Rescue process/recovery counts must be clean 1/0 or canonical recovered 2/1"
+        )
+    recovery_path_raw = rescue.get("execution_recovery_audit")
+    if not isinstance(recovery_path_raw, str) or not recovery_path_raw.strip():
+        raise EvidenceError("rescue.execution_recovery_audit must be a non-empty path")
+    recovery_payload, recovery_artifact = _load_json(
+        Path(recovery_path_raw), role="execution-recovery audit"
+    )
+    recorded_recovery_sha = _sha256(
+        rescue.get("execution_recovery_audit_sha256"),
+        field="rescue.execution_recovery_audit_sha256",
+    )
+    if recorded_recovery_sha != recovery_artifact["sha256"]:
+        raise EvidenceError("Rescue audit execution-recovery SHA-256 mismatch")
+    embedded = _mapping(rescue.get("execution_recovery"), field="rescue.execution_recovery")
+    if dict(embedded) != recovery_payload:
+        raise EvidenceError("Rescue audit execution_recovery differs from its hash-bound artifact")
+
+    _require_equal(recovery_payload.get("schema_version"), 1, field="recovery.schema_version")
+    _require_equal(
+        recovery_payload.get("event"),
+        "classification_rescue_zero_update_execution_recovery",
+        field="recovery.event",
+    )
+    _require_equal(
+        recovery_payload.get("status"),
+        "authorized_before_custom_joint_fixed_validation",
+        field="recovery.status",
+    )
+    _require_equal(
+        recovery_payload.get("activation_approved"), True, field="recovery.activation_approved"
+    )
+    _require_equal(
+        _sha256(
+            recovery_payload.get("source_checkpoint_sha256"),
+            field="recovery.source_checkpoint_sha256",
+        ),
+        activation["source_checkpoint_sha256"],
+        field="recovery.source_checkpoint_sha256",
+    )
+    _require_equal(
+        _sha256(
+            recovery_payload.get("activation_audit_sha256"),
+            field="recovery.activation_audit_sha256",
+        ),
+        activation_artifact_sha256,
+        field="recovery.activation_audit_sha256",
+    )
+
+    failed = _mapping(recovery_payload.get("failed_launch"), field="recovery.failed_launch")
+    expected_failed = {
+        "process_launch_index": 1,
+        "failed_step_index": 0,
+        "training_batches_consumed": 1,
+        "training_samples_consumed": 2,
+        "finite_loss_guard_passed": True,
+        "failure_stage": "after_grad_scaler_unscale_before_gradient_clip_completion",
+        "optimizer_step_reached": False,
+        "optimizer_updates": 0,
+        "completed_epochs": 0,
+        "checkpoint_written": False,
+        "rescue_audit_written": False,
+        "first_step_zero_update_operator_attested": True,
+    }
+    for name, expected in expected_failed.items():
+        _require_equal(failed.get(name), expected, field=f"recovery.failed_launch.{name}")
+
+    recovery_root = Path(recovery_artifact["path"]).parent.resolve()
+    log_artifacts: dict[str, Any] = {}
+    for stream in ("stdout", "stderr"):
+        descriptor = _mapping(
+            failed.get(f"{stream}_artifact"),
+            field=f"recovery.failed_launch.{stream}_artifact",
+        )
+        name = descriptor.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise EvidenceError(f"Recovery {stream} artifact name must be non-empty")
+        log_path = (recovery_root / name).resolve()
+        try:
+            log_path.relative_to(recovery_root)
+        except ValueError as exc:
+            raise EvidenceError(f"Recovery {stream} artifact escapes its root") from exc
+        artifact = _artifact(log_path)
+        _require_equal(
+            descriptor.get("bytes"),
+            artifact["size_bytes"],
+            field=f"recovery.failed_launch.{stream}_artifact.bytes",
+        )
+        _require_equal(
+            _sha256(
+                descriptor.get("sha256"),
+                field=f"recovery.failed_launch.{stream}_artifact.sha256",
+            ),
+            artifact["sha256"],
+            field=f"recovery.failed_launch.{stream}_artifact.sha256",
+        )
+        log_artifacts[stream] = artifact
+
+    validation = _mapping(recovery_payload.get("validation"), field="recovery.validation")
+    for name, expected in {
+        "stock_nnunet_segmentation_only_validation_completed": True,
+        "stock_nnunet_validation_metrics_observed_before_recovery": True,
+        "stock_nnunet_mean_foreground_dice_observed_before_recovery": 0.753518646,
+        "stock_nnunet_validation_used_for_recovery": False,
+        "custom_joint_fixed_validation_started": False,
+        "custom_joint_fixed_validation_output_existed_at_authorization": False,
+        "rescue_process_validation_images_opened": False,
+        "rescue_process_validation_batches_consumed": 0,
+        "rescue_process_validation_used_for_recovery": False,
+    }.items():
+        _require_equal(validation.get(name), expected, field=f"recovery.validation.{name}")
+
+    policy = _mapping(recovery_payload.get("recovery_policy"), field="recovery.recovery_policy")
+    for name, expected in {
+        "schedule_changed": False,
+        "source_checkpoint_changed": False,
+        "reset_seed_changed": False,
+        "maximum_update_bearing_trajectories": 1,
+        "maximum_zero_update_runtime_recoveries": 1,
+        "process_launch_count_after_relaunch": 2,
+        "no_further_recovery_allowed": True,
+    }.items():
+        _require_equal(policy.get(name), expected, field=f"recovery.recovery_policy.{name}")
+
+    return {
+        "artifact": recovery_artifact,
+        "failed_launch_logs": log_artifacts,
+        "process_launch_count": 2,
+        "zero_update_recovery_count": 1,
+        "update_bearing_trajectory_count": 1,
+        "failed_launch_optimizer_updates": 0,
+        "failed_launch_training_batches": 1,
+        "rescue_process_validation_batches_consumed": 0,
+    }
+
+
 def _validate_rescue(
     rescue: Mapping[str, Any],
     *,
@@ -799,7 +989,33 @@ def _validate_rescue(
         field="rescue.method",
     )
     _require_equal(rescue.get("completed_epochs"), 30, field="rescue.completed_epochs")
+    execution_recovery = _validate_execution_recovery(
+        rescue,
+        activation=activation,
+        activation_artifact_sha256=activation_artifact_sha256,
+    )
     _require_equal(rescue.get("optimizer"), "AdamW", field="rescue.optimizer")
+    precision_policy = _mapping(rescue.get("precision_policy"), field="rescue.precision_policy")
+    for name, expected_value in {
+        "autocast_scope": "frozen_encoder_forward_only",
+        "frozen_encoder_forward": "cuda_autocast_float16",
+        "trainable_classification_forward": "float32",
+        "classification_loss": "float32",
+        "classification_backward": "float32",
+        "gradient_clipping": "float32",
+        "optimizer_update": "float32",
+        "grad_scaler_enabled": False,
+    }.items():
+        _require_equal(
+            precision_policy.get(name),
+            expected_value,
+            field=f"rescue.precision_policy.{name}",
+        )
+    _require_equal(
+        rescue.get("successful_optimizer_updates"),
+        3750,
+        field="rescue.successful_optimizer_updates",
+    )
     _require_equal(
         rescue.get("training_loader"),
         "single_threaded_training_split_only",
@@ -931,6 +1147,11 @@ def _validate_rescue(
         item = _mapping(raw, field=f"rescue.training_only_history[{epoch}]")
         _require_equal(item.get("epoch"), epoch, field=f"rescue.history[{epoch}].epoch")
         _require_equal(
+            item.get("successful_optimizer_updates"),
+            125,
+            field=f"rescue.history[{epoch}].successful_optimizer_updates",
+        )
+        _require_equal(
             item.get("generalization_metric"),
             False,
             field=f"rescue.history[{epoch}].generalization_metric",
@@ -951,6 +1172,8 @@ def _validate_rescue(
         "status": "complete",
         "completed_head_only_epochs": 30,
         "training_patch_updates": 3750,
+        "successful_optimizer_updates": 3750,
+        "precision_policy": dict(precision_policy),
         "activation_decision_epoch": activation["decision_epoch"],
         "source_checkpoint_sha256": source_sha,
         "source_checkpoint": str(rescue.get("source_checkpoint", "")),
@@ -968,6 +1191,7 @@ def _validate_rescue(
             field="rescue.validation_case_ids_sha256",
         ),
         "summed_epoch_compute_seconds": history_seconds,
+        "execution_recovery": execution_recovery,
     }
 
 

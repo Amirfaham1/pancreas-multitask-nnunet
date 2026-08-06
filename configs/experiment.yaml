@@ -51,7 +51,7 @@ evaluation:
 
 # Predeclared post-training contingency. This does not alter the joint run.
 classification_rescue:
-  status: prepared_not_launched
+  status: activated_zero_update_recovery_authorized
   activation:
     evidence_scope: training_metrics_only
     epoch_40_last_10_mean_classification_ce_at_least: 1.05
@@ -63,6 +63,7 @@ classification_rescue:
     epoch_50_patch_accuracy_below: 0.45
     epoch_50_rule: either_condition_sufficient
     maximum_attempts: 1
+    maximum_update_bearing_trajectories: 1
   source: checkpoint_final.pth
   activation_audit: classification_rescue_activation.json
   require_affirmative_hash_bound_audit: true
@@ -83,6 +84,24 @@ classification_rescue:
   gradient_clip_norm: 1.0
   label_smoothing: 0.05
   nonlesion_patch_weight: 0.25
+  execution_recovery:
+    process_launches_after_relaunch: 2
+    zero_update_recoveries: 1
+    failed_launch_optimizer_updates: 0
+    further_recovery_allowed: false
+    stock_nnunet_segmentation_only_validation_completed: true
+    stock_nnunet_validation_metrics_used_for_recovery: false
+    custom_joint_fixed_validation_started_before_recovery: false
+    rescue_validation_batches: 0
+    precision_policy:
+      autocast_scope: frozen_encoder_forward_only
+      frozen_encoder_forward: cuda_autocast_float16
+      trainable_classification_forward: float32
+      classification_loss: float32
+      classification_backward: float32
+      gradient_clipping: float32
+      optimizer_update: float32
+      grad_scaler_enabled: false
   reset_seed: 20260806
   early_stopping: false
   wandb: disabled

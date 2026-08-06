@@ -71,7 +71,7 @@ def test_final_evaluation_script_declares_fixed_candidates_and_validation_inputs
 def test_final_evaluation_script_preserves_resume_and_stops_before_submission() -> None:
     source = SOURCE
 
-    assert 'if ($Force)' in source
+    assert "if ($Force)" in source
     assert '$predictionArguments += "--overwrite"' in source
     assert '$predictionArguments += "--no-overwrite"' in source
     assert '"--probability-csv", $probabilityCsv' in source
@@ -110,9 +110,9 @@ def test_activation_audit_deterministically_controls_three_or_four_candidates() 
 
     assert "[switch] $IncludeClassificationRescue" in source
     assert '"classification_rescue_activation.json"' in source
-    assert 'if (-not $activationApproved)' in source
-    assert 'if ($IncludeClassificationRescue)' in source
-    assert 'if (-not $IncludeClassificationRescue)' in source
+    assert "if (-not $activationApproved)" in source
+    assert "if ($IncludeClassificationRescue)" in source
+    assert "if (-not $IncludeClassificationRescue)" in source
     assert 'Name = "checkpoint_classification_rescue"' in source
     assert 'FileName = "checkpoint_classification_rescue.pth"' in source
     assert "evaluating exactly 3 candidates" in source
@@ -120,9 +120,7 @@ def test_activation_audit_deterministically_controls_three_or_four_candidates() 
 
     final_check = source.index("$finalCheckpointSha256 = Get-FileSha256")
     activation_read = source.index("$activationAudit = Read-JsonObject")
-    output_creation = source.index(
-        "New-Item -ItemType Directory -Path $evaluationRoot -Force"
-    )
+    output_creation = source.index("New-Item -ItemType Directory -Path $evaluationRoot -Force")
     assert final_check < activation_read < output_creation
 
 
@@ -148,6 +146,14 @@ def test_rescue_provenance_and_no_validation_use_are_checked_before_inference() 
     rescue_checks = source.index("$rescueCheckpointSha256 = Get-FileSha256")
     inference_loop = source.index('Write-Host "[$($candidate.Name)] Running fixed-validation')
     assert rescue_checks < inference_loop
+
+
+def test_rescue_provenance_accepts_only_clean_or_canonical_recovery_branch() -> None:
+    assert "$processLaunchCount -eq 1 -and $zeroUpdateRecoveryCount -eq 0" in SOURCE
+    assert "$processLaunchCount -eq 2 -and $zeroUpdateRecoveryCount -eq 1" in SOURCE
+    assert "Clean rescue audit must not fabricate recovery field" in SOURCE
+    assert "Clean rescue branch conflicts with a canonical recovery artifact" in SOURCE
+    assert "exactly one update-bearing trajectory" in SOURCE
 
 
 def test_rescue_full_frozen_protocol_and_split_manifest_are_fail_closed() -> None:

@@ -71,6 +71,7 @@ class RescueStepResult:
     sample_count: int
     lesion_patch_count: int
     gradient_norm_before_clip: float
+    optimizer_update_count: int
     target_counts: tuple[int, ...]
     prediction_counts: tuple[int, ...]
 
@@ -423,10 +424,17 @@ def classification_rescue_train_step(
     class_weights: Tensor,
     schedule: RescueSchedule,
     scaler: Any | None = None,
-    use_amp: bool = False,
+    use_encoder_amp: bool = False,
     num_classes: int = 3,
 ) -> RescueStepResult:
-    """Run one frozen-encoder, decoder-free classification update."""
+    """Run one frozen-encoder, decoder-free classification update.
+
+    Autocast is confined to frozen feature extraction. The returned bottleneck
+    is converted to float32 before any trainable operation, and the
+    classification forward, loss, backward pass, clipping, and optimizer update
+    all remain in float32. A gradient scaler is therefore neither needed nor
+    permitted on this path.
+    """
 
     trainable_items = classification_parameter_items(model)
     if any(not parameter.requires_grad for _, parameter in trainable_items):
@@ -435,14 +443,41 @@ def classification_rescue_train_step(
         raise RuntimeError("Encoder parameters must be frozen")
     if any(parameter.requires_grad for parameter in model.decoder.parameters()):
         raise RuntimeError("Decoder parameters must be frozen")
+    if scaler is not None and scaler.is_enabled():
+        raise RuntimeError(
+            "Classification rescue requires GradScaler to remain disabled because "
+            "all trainable operations run in float32"
+        )
+    non_float32_parameters = [
+        name for name, parameter in trainable_items if parameter.dtype != torch.float32
+    ]
+    if non_float32_parameters:
+        raise RuntimeError(
+            "Classification rescue trainable parameters must be float32; got "
+            f"{non_float32_parameters}"
+        )
 
     optimizer.zero_grad(set_to_none=True)
-    context = (
-        torch.autocast(device_type=data.device.type, enabled=True) if use_amp else nullcontext()
+    encoder_autocast_dtype = torch.float16 if data.device.type == "cuda" else torch.bfloat16
+    encoder_context = (
+        torch.autocast(
+            device_type=data.device.type,
+            dtype=encoder_autocast_dtype,
+            enabled=True,
+        )
+        if use_encoder_amp
+        else nullcontext()
     )
-    with context:
-        with torch.no_grad():
-            bottleneck = model.encode_bottleneck(data)
+    with torch.no_grad(), encoder_context:
+        bottleneck = model.encode_bottleneck(data)
+    if not torch.isfinite(bottleneck).all():
+        raise FloatingPointError(
+            "Classification rescue frozen encoder produced a non-finite bottleneck"
+        )
+
+    # Do not let an outer autocast context leak into the trainable path.
+    bottleneck = bottleneck.float()
+    with torch.autocast(device_type=data.device.type, enabled=False):
         logits = model.classify_bottleneck(bottleneck)
         loss, lesion_present = _classification_loss(
             logits,
@@ -452,28 +487,68 @@ def classification_rescue_train_step(
             label_smoothing=schedule.label_smoothing,
             nonlesion_patch_weight=schedule.nonlesion_patch_weight,
         )
+    if logits.dtype != torch.float32:
+        raise RuntimeError(
+            "Classification rescue logits must be float32 after the precision boundary; "
+            f"got {logits.dtype}"
+        )
+    if loss.dtype != torch.float32:
+        raise RuntimeError(f"Classification rescue loss must be float32; got {loss.dtype}")
+    if not torch.isfinite(logits).all():
+        raise FloatingPointError("Classification rescue produced non-finite logits")
     if not torch.isfinite(loss):
         raise FloatingPointError("Classification rescue produced a non-finite loss")
 
     trainable_parameters = [parameter for _, parameter in trainable_items]
-    if scaler is not None and scaler.is_enabled():
-        scaler.scale(loss).backward()
-        scaler.unscale_(optimizer)
-        gradient_norm = torch.nn.utils.clip_grad_norm_(
-            trainable_parameters,
-            schedule.gradient_clip_norm,
-            error_if_nonfinite=True,
+    loss.backward()
+
+    missing_gradients: list[str] = []
+    nonfinite_gradients: list[str] = []
+    non_float32_gradients: list[str] = []
+    for name, parameter in trainable_items:
+        gradient = parameter.grad
+        if gradient is None:
+            missing_gradients.append(name)
+            continue
+        if gradient.dtype != torch.float32:
+            non_float32_gradients.append(f"{name} ({gradient.dtype})")
+        finite = torch.isfinite(gradient)
+        if not finite.all():
+            finite_values = gradient.detach()[finite]
+            finite_max_abs = (
+                float(finite_values.abs().max().cpu()) if finite_values.numel() else None
+            )
+            nonfinite_gradients.append(
+                f"{name} (nonfinite={int((~finite).sum().cpu())}, finite_max_abs={finite_max_abs})"
+            )
+    if missing_gradients:
+        raise RuntimeError(
+            f"Classification rescue parameters are missing gradients: {missing_gradients}"
         )
-        scaler.step(optimizer)
-        scaler.update()
-    else:
-        loss.backward()
-        gradient_norm = torch.nn.utils.clip_grad_norm_(
-            trainable_parameters,
-            schedule.gradient_clip_norm,
-            error_if_nonfinite=True,
+    if non_float32_gradients:
+        raise RuntimeError(
+            f"Classification rescue gradients must be float32: {non_float32_gradients}"
         )
-        optimizer.step()
+    if nonfinite_gradients:
+        raise FloatingPointError(
+            "Classification rescue produced non-finite gradients before clipping: "
+            + "; ".join(nonfinite_gradients)
+        )
+
+    gradient_norm = torch.nn.utils.clip_grad_norm_(
+        trainable_parameters,
+        schedule.gradient_clip_norm,
+        error_if_nonfinite=True,
+    )
+    optimizer.step()
+    nonfinite_parameters = [
+        name for name, parameter in trainable_items if not torch.isfinite(parameter.detach()).all()
+    ]
+    if nonfinite_parameters:
+        raise FloatingPointError(
+            "Classification rescue optimizer produced non-finite parameters: "
+            f"{nonfinite_parameters}"
+        )
     predictions = logits.detach().argmax(dim=1)
     target_counts = torch.bincount(targets.detach(), minlength=num_classes)
     prediction_counts = torch.bincount(predictions, minlength=num_classes)
@@ -483,6 +558,7 @@ def classification_rescue_train_step(
         sample_count=int(targets.numel()),
         lesion_patch_count=int(lesion_present.sum().cpu()),
         gradient_norm_before_clip=float(torch.as_tensor(gradient_norm).detach().cpu()),
+        optimizer_update_count=1,
         target_counts=tuple(int(value) for value in target_counts.cpu()),
         prediction_counts=tuple(int(value) for value in prediction_counts.cpu()),
     )
@@ -589,6 +665,11 @@ def validate_resume_state(
         raise ValueError(f"Invalid completed_epochs value: {completed_epochs}")
     if "optimizer_state" not in state or "rng_state" not in state:
         raise ValueError("Resume checkpoint lacks optimizer or RNG state")
+    if state.get("grad_scaler_state") is not None:
+        raise ValueError(
+            "Resume checkpoint must not contain GradScaler state for the "
+            "trainable-float32 precision policy"
+        )
     history = state.get("training_only_history")
     if not isinstance(history, list) or len(history) != completed_epochs:
         raise ValueError("Resume history length does not match completed_epochs")
@@ -605,6 +686,22 @@ def validate_resume_state(
     resume_count = int(state.get("resume_count", -1))
     if resume_count < 0:
         raise ValueError("Resume checkpoint has invalid resume_count")
+    successful_optimizer_updates = int(state.get("successful_optimizer_updates", -1))
+    expected_optimizer_updates = completed_epochs * schedule.iterations_per_epoch
+    if successful_optimizer_updates != expected_optimizer_updates:
+        raise ValueError(
+            "Resume checkpoint successful_optimizer_updates does not match its completed epochs"
+        )
+    for epoch, raw_epoch in enumerate(history):
+        if not isinstance(raw_epoch, Mapping):
+            raise TypeError(f"Resume history epoch {epoch} must be a mapping")
+        if int(raw_epoch.get("successful_optimizer_updates", -1)) != (
+            schedule.iterations_per_epoch
+        ):
+            raise ValueError(
+                f"Resume history epoch {epoch} does not contain the declared number "
+                "of successful optimizer updates"
+            )
     return completed_epochs
 
 

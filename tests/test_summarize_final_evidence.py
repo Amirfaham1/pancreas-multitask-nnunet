@@ -208,6 +208,69 @@ def _build_bundle(tmp_path: Path) -> dict[str, Path]:
     activation_path = tmp_path / "fold_0" / "classification_rescue_activation.json"
     _write_json(activation_path, activation)
 
+    recovery_evidence = tmp_path / "fold_0" / "classification_rescue_recovery_evidence"
+    recovery_evidence.mkdir()
+    failed_stdout = recovery_evidence / "failed_launch.stdout.log"
+    failed_stderr = recovery_evidence / "failed_launch.stderr.log"
+    failed_stdout.write_text("synthetic failed rescue stdout\n", encoding="utf-8")
+    failed_stderr.write_text("synthetic failed rescue stderr\n", encoding="utf-8")
+    recovery = {
+        "schema_version": 1,
+        "event": "classification_rescue_zero_update_execution_recovery",
+        "status": "authorized_before_custom_joint_fixed_validation",
+        "source_checkpoint_name": "checkpoint_final.pth",
+        "source_checkpoint_sha256": _sha256(checkpoints["checkpoint_final"]),
+        "activation_audit_sha256": _sha256(activation_path),
+        "activation_approved": True,
+        "failed_launch": {
+            "process_launch_index": 1,
+            "failed_step_index": 0,
+            "training_batches_consumed": 1,
+            "training_samples_consumed": 2,
+            "finite_loss_guard_passed": True,
+            "failure_stage": "after_grad_scaler_unscale_before_gradient_clip_completion",
+            "exception_type": "RuntimeError",
+            "optimizer_step_reached": False,
+            "optimizer_updates": 0,
+            "completed_epochs": 0,
+            "checkpoint_written": False,
+            "rescue_audit_written": False,
+            "first_step_zero_update_operator_attested": True,
+            "stdout_artifact": {
+                "name": "classification_rescue_recovery_evidence/failed_launch.stdout.log",
+                "bytes": failed_stdout.stat().st_size,
+                "sha256": _sha256(failed_stdout),
+            },
+            "stderr_artifact": {
+                "name": "classification_rescue_recovery_evidence/failed_launch.stderr.log",
+                "bytes": failed_stderr.stat().st_size,
+                "sha256": _sha256(failed_stderr),
+            },
+        },
+        "validation": {
+            "stock_nnunet_segmentation_only_validation_completed": True,
+            "stock_nnunet_validation_metrics_observed_before_recovery": True,
+            "stock_nnunet_mean_foreground_dice_observed_before_recovery": 0.753518646,
+            "stock_nnunet_validation_used_for_recovery": False,
+            "custom_joint_fixed_validation_started": False,
+            "custom_joint_fixed_validation_output_existed_at_authorization": False,
+            "rescue_process_validation_images_opened": False,
+            "rescue_process_validation_batches_consumed": 0,
+            "rescue_process_validation_used_for_recovery": False,
+        },
+        "recovery_policy": {
+            "schedule_changed": False,
+            "source_checkpoint_changed": False,
+            "reset_seed_changed": False,
+            "maximum_update_bearing_trajectories": 1,
+            "maximum_zero_update_runtime_recoveries": 1,
+            "process_launch_count_after_relaunch": 2,
+            "no_further_recovery_allowed": True,
+        },
+    }
+    recovery_path = tmp_path / "fold_0" / "classification_rescue_zero_update_recovery.json"
+    _write_json(recovery_path, recovery)
+
     source_components = {"encoder": "b" * 64, "decoder": "c" * 64, "classification": "d" * 64}
     current_components = {"encoder": "b" * 64, "decoder": "c" * 64, "classification": "e" * 64}
     rescue = {
@@ -219,6 +282,12 @@ def _build_bundle(tmp_path: Path) -> dict[str, Path]:
         "activation_audit": str(activation_path.resolve()),
         "activation_audit_sha256": _sha256(activation_path),
         "activation_decision_epoch": 40,
+        "process_launch_count": 2,
+        "zero_update_recovery_count": 1,
+        "update_bearing_trajectory_count": 1,
+        "execution_recovery": recovery,
+        "execution_recovery_audit": str(recovery_path.resolve()),
+        "execution_recovery_audit_sha256": _sha256(recovery_path),
         "source_component_sha256": source_components,
         "current_component_sha256": current_components,
         "output_checkpoint": str(checkpoints["checkpoint_classification_rescue"].resolve()),
@@ -234,6 +303,17 @@ def _build_bundle(tmp_path: Path) -> dict[str, Path]:
             "reset_seed": 20260806,
         },
         "optimizer": "AdamW",
+        "precision_policy": {
+            "autocast_scope": "frozen_encoder_forward_only",
+            "frozen_encoder_forward": "cuda_autocast_float16",
+            "trainable_classification_forward": "float32",
+            "classification_loss": "float32",
+            "classification_backward": "float32",
+            "gradient_clipping": "float32",
+            "optimizer_update": "float32",
+            "grad_scaler_enabled": False,
+        },
+        "successful_optimizer_updates": 3750,
         "training_loader": "single_threaded_training_split_only",
         "training_batch_size": 2,
         "decoder_executed_during_rescue": False,
@@ -268,6 +348,7 @@ def _build_bundle(tmp_path: Path) -> dict[str, Path]:
                 "training_patch_accuracy": 0.4 + epoch / 100,
                 "elapsed_seconds": 1.5,
                 "generalization_metric": False,
+                "successful_optimizer_updates": 125,
             }
             for epoch in range(30)
         ],
@@ -439,6 +520,55 @@ def test_summarizer_binds_artifacts_and_derives_report_evidence(tmp_path: Path) 
         "quiz_035",
         "quiz_034",
     ]
+
+
+def test_clean_rescue_branch_has_no_fabricated_recovery(tmp_path: Path) -> None:
+    bundle = _build_bundle(tmp_path)
+    rescue = json.loads(bundle["rescue"].read_text(encoding="utf-8"))
+    recovery_path = Path(rescue["execution_recovery_audit"])
+    rescue["process_launch_count"] = 1
+    rescue["zero_update_recovery_count"] = 0
+    rescue["update_bearing_trajectory_count"] = 1
+    for field in (
+        "execution_recovery",
+        "execution_recovery_audit",
+        "execution_recovery_audit_sha256",
+    ):
+        rescue.pop(field)
+    recovery_path.unlink()
+    _write_json(bundle["rescue"], rescue)
+
+    summary = _summarize(bundle)
+
+    recovery = summary["rescue"]["execution_recovery"]
+    assert recovery["process_launch_count"] == 1
+    assert recovery["zero_update_recovery_count"] == 0
+    assert recovery["update_bearing_trajectory_count"] == 1
+    assert recovery["artifact"] is None
+    assert recovery["failed_launch_logs"] == {}
+
+
+def test_clean_rescue_branch_rejects_existing_canonical_recovery_artifact(
+    tmp_path: Path,
+) -> None:
+    bundle = _build_bundle(tmp_path)
+    rescue = json.loads(bundle["rescue"].read_text(encoding="utf-8"))
+    rescue["process_launch_count"] = 1
+    rescue["zero_update_recovery_count"] = 0
+    rescue["update_bearing_trajectory_count"] = 1
+    for field in (
+        "execution_recovery",
+        "execution_recovery_audit",
+        "execution_recovery_audit_sha256",
+    ):
+        rescue.pop(field)
+    _write_json(bundle["rescue"], rescue)
+
+    with pytest.raises(
+        MODULE.EvidenceError,
+        match="Clean rescue branch conflicts with a canonical recovery artifact",
+    ):
+        _summarize(bundle)
 
 
 def test_cli_writes_atomic_json(tmp_path: Path) -> None:

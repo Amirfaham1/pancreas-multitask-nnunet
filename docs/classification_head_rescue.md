@@ -15,12 +15,49 @@ it later.
 Even if precommitted at epoch 40 or 50, do not launch until the original
 200-epoch run exits cleanly. The schedule is then fixed; validation cannot
 change its length, learning rate, initialization, or checkpoint. There is no
-hyperparameter search and no second rescue attempt.
+hyperparameter search and no second update-bearing rescue trajectory. Process
+recovery is counted separately from model attempts and must be disclosed.
 
 This contingency was prospectively frozen after online patch diagnostics had
 suggested classification collapse, but before any full-volume fixed-validation
 evaluation. Those observed online diagnostics must be disclosed; they are not
 claimed to be unseen.
+
+## Disclosed zero-update execution recovery
+
+The first rescue process launch on 2026-08-06 failed on its first training
+batch: the finite-loss guard passed, but mixed-precision gradient scaling
+produced a non-finite norm at fail-fast clipping. The exception occurred before
+`scaler.step`/`AdamW.step`, so the failed launch made zero optimizer updates,
+completed zero epochs, and wrote no rescue checkpoint or audit. Its stdout and
+stderr were preserved byte-for-byte and bound by SHA-256 in
+`classification_rescue_zero_update_recovery.json`.
+
+Stock nnU-Net segmentation-only validation had completed during joint-trainer
+teardown before this recovery decision. Its mean foreground Dice
+`0.753518646` was observed in monitoring before recovery authorization, but it
+did not drive the numerical repair, schedule, seed, or recovery decision. The
+custom joint four-candidate
+fixed-validation pass had not started, and the rescue process itself opened no
+validation images and consumed zero validation batches.
+
+Before any custom joint fixed-validation result existed, the numerical scope
+was amended once: the frozen encoder forward remains under CUDA autocast, while
+the detached bottleneck, trainable pooling/head, classification loss,
+backpropagation, gradient clipping, and AdamW update use FP32 without a gradient
+scaler. The source checkpoint, reset seed, data, augmentation, optimizer
+hyperparameters, clip threshold, and `30 x 125` successful-update schedule are
+unchanged. The relaunch is therefore reported as process launch 2, zero-update
+recovery 1, and update-bearing trajectory 1. No further recovery is allowed.
+
+Recovery evidence is conditional, not fabricated as a universal requirement.
+On a clean future execution where the canonical recovery artifact is absent,
+the wrapper launches normally and the rescue audit must record process launches
+`1`, zero-update recoveries `0`, and update-bearing trajectories `1`, with no
+`execution_recovery*` fields. For this realized run, the canonical artifact is
+present, so the wrapper validates and passes it automatically and the only
+accepted counts are `2 / 1 / 1`. Evaluation and packaging reject every other
+combination and reject a clean audit that conflicts with a canonical artifact.
 
 ## Frozen method
 
@@ -103,28 +140,23 @@ decision it refuses to evaluate anything without that switch and a completed,
 hash-bound rescue checkpoint and audit.
 
 The wrapper refuses a missing, negative, or hash-mismatched activation audit,
-refuses active production/rescue processes, forces W&B off, and runs in the
+auto-validates and passes the canonical recovery artifact when it exists,
+refuses an explicitly requested but missing recovery artifact, refuses active
+production/rescue processes, forces W&B off, and runs in the
 foreground. It shares a process-lifetime named mutex with fixed validation, so
-duplicate or cross-stage launchers cannot contend for the model/GPU. If
-interrupted after an epoch checkpoint is committed, continue
-from its embedded AdamW, AMP, and RNG state:
-
-```powershell
-.\scripts\Run-ClassificationRescue.ps1 -Resume
-```
+duplicate or cross-stage launchers cannot contend for the model/GPU. The fixed
+provenance contract permits exactly one uninterrupted update-bearing
+trajectory, so `-Resume` is rejected. If that trajectory is interrupted,
+preserve its artifacts, abandon the rescue candidate, and evaluate only the
+original checkpoints.
 
 Python owns an exclusive `checkpoint_classification_rescue.pth.lock` file for
 the process lifetime. The wrapper never deletes it automatically, because a
 second near-simultaneous launcher must not be able to remove a live lock. A
-hard process/power loss can leave a stale file; before resuming, verify that no
-`train_classification_rescue.py` process exists, then remove only that exact
-direct-child lock and invoke `-Resume` once. If interruption happened after the
-final checkpoint was atomically committed but before its public audit JSON was
-written, `-Resume` validates the embedded complete state and reconstructs that
-audit without running another optimizer update.
-For an incomplete checkpoint, resume preserves the original start timestamp
-and adds the new process segment to cumulative `elapsed_seconds`; it does not
-replace total runtime with only the latest segment.
+hard process/power loss can leave a stale file; verify that no
+`train_classification_rescue.py` process exists before removing only that exact
+direct-child lock. Removing a stale lock does not authorize another rescue
+launch.
 
 Outputs are:
 
@@ -134,11 +166,12 @@ Outputs are:
 The `.pth` file contains the standard keys nnU-Net joint inference consumes:
 `network_weights`, `trainer_name`, `init_args`, and mirroring axes. It also has
 a namespaced `classification_rescue` block containing the exact schedule,
-training-only history, optimizer/scaler state, RNG state, split hashes, and
+training-only history, optimizer and RNG state, the disabled-scaler/FP32
+precision policy, split hashes, and
 component hashes. It intentionally omits nnU-Net's top-level joint-optimizer
 state, because pretending the head-only AdamW state can resume the original
-all-parameter SGD trainer would be unsafe. Resume this checkpoint only through
-the rescue command; use it normally with `predict_joint.py` for inference.
+all-parameter SGD trainer would be unsafe. Use a complete checkpoint normally
+with `predict_joint.py` for inference; do not resume rescue optimization.
 
 ## One allowed evaluation and final choice
 
@@ -160,9 +193,9 @@ Training-patch diagnostics in the audit are not generalization metrics.
   averages probabilities over mirror views and spatial tiles.
 - Reinitialization discards any useful classification parameters learned by the
   joint run; the fixed comparison can therefore be worse and must not be hidden.
-- Single-threaded augmentation makes interruption/resume semantics auditable,
-  but transform-local caches and backend flags are not checkpointed, so a
-  resumed run is valid but not promised bit-exact. Its actual wall-clock time
-  has not been GPU-benchmarked; make no runtime claim before execution.
+- Single-threaded augmentation and per-epoch snapshots make an interruption
+  auditable, but the fixed provenance contract prohibits resuming it. Its actual
+  wall-clock time has not been GPU-benchmarked; make no runtime claim before
+  execution.
 - The checkpoint is standard for joint inference but intentionally not
   compatible with nnU-Net's `--c` all-parameter SGD resume path.

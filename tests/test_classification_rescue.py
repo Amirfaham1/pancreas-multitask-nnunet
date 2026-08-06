@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -136,6 +138,7 @@ def test_frozen_rescue_step_updates_only_registered_classification_parameters() 
 
     assert result.sample_count == 3
     assert result.lesion_patch_count == 2
+    assert result.optimizer_update_count == 1
     assert sum(result.target_counts) == 3
     assert model.decoder.calls == 0
     assert after["encoder"] == immutable_before["encoder"]
@@ -149,6 +152,94 @@ def test_frozen_rescue_step_updates_only_registered_classification_parameters() 
     assert {id(parameter) for _, parameter in classification_parameter_items(model)} == {
         id(parameter) for group in optimizer.param_groups for parameter in group["params"]
     }
+
+
+def test_rescue_confines_autocast_to_frozen_encoder_and_updates_head_in_float32() -> None:
+    model = _model()
+    reset_classification_parameters(model, seed=23)
+    items = freeze_for_classification_rescue(model)
+    optimizer = torch.optim.AdamW([parameter for _, parameter in items], lr=3e-4)
+    classification_input_dtypes = []
+    hook = model.classification_pool.register_forward_pre_hook(
+        lambda _module, inputs: classification_input_dtypes.append(inputs[0].dtype)
+    )
+
+    try:
+        result = classification_rescue_train_step(
+            model,
+            torch.randn(2, 1, 8, 8, 8),
+            torch.tensor([0, 2]),
+            torch.zeros(2, 1, 8, 8, 8, dtype=torch.long),
+            optimizer=optimizer,
+            class_weights=torch.ones(3),
+            schedule=RescueSchedule(epochs=1, iterations_per_epoch=1),
+            scaler=torch.GradScaler("cpu", enabled=False),
+            use_encoder_amp=True,
+        )
+    finally:
+        hook.remove()
+
+    assert classification_input_dtypes == [torch.float32]
+    assert result.optimizer_update_count == 1
+    assert all(parameter.grad is not None for _, parameter in items)
+    assert all(parameter.grad.dtype == torch.float32 for _, parameter in items)
+    assert all(torch.isfinite(parameter.grad).all() for _, parameter in items)
+
+
+def test_rescue_rejects_enabled_gradient_scaler_before_forward() -> None:
+    class _EnabledScaler:
+        @staticmethod
+        def is_enabled() -> bool:
+            return True
+
+    model = _model()
+    items = freeze_for_classification_rescue(model)
+    optimizer = torch.optim.AdamW([parameter for _, parameter in items], lr=3e-4)
+
+    with pytest.raises(RuntimeError, match="GradScaler to remain disabled"):
+        classification_rescue_train_step(
+            model,
+            torch.randn(2, 1, 8, 8, 8),
+            torch.tensor([0, 1]),
+            torch.zeros(2, 1, 8, 8, 8, dtype=torch.long),
+            optimizer=optimizer,
+            class_weights=torch.ones(3),
+            schedule=RescueSchedule(epochs=1, iterations_per_epoch=1),
+            scaler=_EnabledScaler(),
+        )
+
+    assert model.decoder.calls == 0
+    assert not optimizer.state
+
+
+def test_rescue_names_nonfinite_gradient_and_refuses_optimizer_update() -> None:
+    model = _model()
+    reset_classification_parameters(model, seed=29)
+    items = freeze_for_classification_rescue(model)
+    optimizer = torch.optim.AdamW([parameter for _, parameter in items], lr=3e-4)
+    before = component_hashes(model)
+    bad_parameter = dict(items)["classification_head.4.bias"]
+    hook = bad_parameter.register_hook(lambda gradient: torch.full_like(gradient, float("inf")))
+
+    try:
+        with pytest.raises(
+            FloatingPointError,
+            match=r"classification_head\.4\.bias \(nonfinite=3",
+        ):
+            classification_rescue_train_step(
+                model,
+                torch.randn(2, 1, 8, 8, 8),
+                torch.tensor([0, 1]),
+                torch.zeros(2, 1, 8, 8, 8, dtype=torch.long),
+                optimizer=optimizer,
+                class_weights=torch.ones(3),
+                schedule=RescueSchedule(epochs=1, iterations_per_epoch=1),
+            )
+    finally:
+        hook.remove()
+
+    assert component_hashes(model) == before
+    assert not optimizer.state
 
 
 def test_inference_checkpoint_is_strictly_reloadable_without_fake_joint_optimizer() -> None:
@@ -199,7 +290,8 @@ def test_resume_requires_identical_source_and_frozen_schedule() -> None:
         "started_at_utc": "2026-08-06T00:00:00+00:00",
         "elapsed_seconds": 12.5,
         "resume_count": 0,
-        "training_only_history": [{}],
+        "successful_optimizer_updates": 3,
+        "training_only_history": [{"successful_optimizer_updates": 3}],
         "current_component_sha256": {
             "encoder": "e",
             "decoder": "d",
@@ -242,7 +334,11 @@ def test_complete_resume_state_can_repair_a_missing_public_audit() -> None:
         "started_at_utc": "2026-08-06T00:00:00+00:00",
         "elapsed_seconds": 25.0,
         "resume_count": 1,
-        "training_only_history": [{}, {}],
+        "successful_optimizer_updates": 6,
+        "training_only_history": [
+            {"successful_optimizer_updates": 3},
+            {"successful_optimizer_updates": 3},
+        ],
         "current_component_sha256": {
             "encoder": "e",
             "decoder": "d",
@@ -406,6 +502,209 @@ def test_rescue_cli_defaults_match_predeclared_schedule() -> None:
     assert args.expected_training_cases == 252
     assert args.expected_validation_cases == 36
     assert args.resume is False
+    assert args.recovery_audit is None
+    recovered_args = module.build_parser().parse_args(
+        [
+            "--source-checkpoint",
+            "source.pth",
+            "--output-checkpoint",
+            "rescue.pth",
+            "--activation-audit",
+            "activation.json",
+            "--recovery-audit",
+            "classification_rescue_zero_update_recovery.json",
+        ]
+    )
+    assert recovered_args.recovery_audit == Path("classification_rescue_zero_update_recovery.json")
+    precision = module._precision_policy(torch.device("cuda"))
+    assert precision["frozen_encoder_forward"] == "cuda_autocast_float16"
+    assert precision["trainable_classification_forward"] == "float32"
+    assert precision["classification_backward"] == "float32"
+    assert precision["grad_scaler_enabled"] is False
+
+
+def test_zero_update_recovery_artifact_is_strictly_hash_bound(tmp_path: Path) -> None:
+    script_path = ROOT / "scripts" / "train_classification_rescue.py"
+    spec = importlib.util.spec_from_file_location("train_classification_rescue", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    source = tmp_path / "checkpoint_final.pth"
+    source.write_bytes(b"fixed source")
+    source_hash = module.file_sha256(source)
+    activation = tmp_path / "classification_rescue_activation.json"
+    activation.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "activation_approved": True,
+                "source_checkpoint_name": "checkpoint_final.pth",
+                "source_checkpoint_sha256": source_hash,
+                "validation_metrics_read": False,
+                "validation_used_for_activation": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    activation_hash = module.file_sha256(activation)
+    evidence = tmp_path / "classification_rescue_recovery_evidence"
+    evidence.mkdir()
+    stdout_log = evidence / "failed_launch.stdout.log"
+    stderr_log = evidence / "failed_launch.stderr.log"
+    stdout_log.write_text(
+        "ACTIVATION_APPROVED=true\n"
+        "CLASSIFICATION_RESCUE_START\n"
+        "Using splits from existing split file\n"
+        "This split has 252 training and 36 validation cases.\n",
+        encoding="utf-8",
+    )
+    stderr_log.write_text(
+        "classification_rescue_train_step\n"
+        "clip_grad_norm_\n"
+        "gradients from `parameters` is non-finite\n"
+        "Classification rescue exited with code 1\n"
+        "OVERNIGHT_PIPELINE_FAILED\n",
+        encoding="utf-8",
+    )
+    stdout_artifact = {
+        "name": "classification_rescue_recovery_evidence/failed_launch.stdout.log",
+        "bytes": stdout_log.stat().st_size,
+        "sha256": module.file_sha256(stdout_log),
+    }
+    stderr_artifact = {
+        "name": "classification_rescue_recovery_evidence/failed_launch.stderr.log",
+        "bytes": stderr_log.stat().st_size,
+        "sha256": module.file_sha256(stderr_log),
+    }
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    def git_blob(relative_path: str) -> str:
+        return subprocess.run(
+            ["git", "rev-parse", f"{commit}:{relative_path}"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    payload = {
+        "schema_version": 1,
+        "event": "classification_rescue_zero_update_execution_recovery",
+        "status": "authorized_before_custom_joint_fixed_validation",
+        "source_checkpoint_name": "checkpoint_final.pth",
+        "source_checkpoint_sha256": source_hash,
+        "activation_audit_sha256": activation_hash,
+        "activation_approved": True,
+        "git_commit_at_failed_launch": commit,
+        "rescue_protocol_commit": commit,
+        "pre_failure_implementation": {
+            "train_script_git_blob": git_blob("scripts/train_classification_rescue.py"),
+            "rescue_module_git_blob": git_blob("src/pancreas_multitask/classification_rescue.py"),
+        },
+        "failed_launch": {
+            "process_launch_index": 1,
+            "failed_step_index": 0,
+            "training_batches_consumed": 1,
+            "training_samples_consumed": 2,
+            "finite_loss_guard_passed": True,
+            "failure_stage": "after_grad_scaler_unscale_before_gradient_clip_completion",
+            "exception_type": "RuntimeError",
+            "optimizer_step_reached": False,
+            "optimizer_updates": 0,
+            "completed_epochs": 0,
+            "checkpoint_written": False,
+            "rescue_audit_written": False,
+            "first_step_zero_update_operator_attested": True,
+            "stdout_artifact": stdout_artifact,
+            "stderr_artifact": stderr_artifact,
+        },
+        "validation": {
+            "stock_nnunet_segmentation_only_validation_completed": True,
+            "stock_nnunet_validation_metrics_observed_before_recovery": True,
+            "stock_nnunet_mean_foreground_dice_observed_before_recovery": 0.753518646,
+            "stock_nnunet_validation_used_for_recovery": False,
+            "custom_joint_fixed_validation_started": False,
+            "custom_joint_fixed_validation_output_existed_at_authorization": False,
+            "rescue_process_validation_images_opened": False,
+            "rescue_process_validation_batches_consumed": 0,
+            "rescue_process_validation_used_for_recovery": False,
+        },
+        "recovery_policy": {
+            "schedule_changed": False,
+            "source_checkpoint_changed": False,
+            "reset_seed_changed": False,
+            "maximum_update_bearing_trajectories": 1,
+            "maximum_zero_update_runtime_recoveries": 1,
+            "process_launch_count_after_relaunch": 2,
+            "no_further_recovery_allowed": True,
+        },
+    }
+    recovery_path = tmp_path / "classification_rescue_zero_update_recovery.json"
+    recovery_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded, digest = module._load_execution_recovery(
+        recovery_path,
+        source_checkpoint=source,
+        activation_audit=activation,
+    )
+
+    assert loaded == payload
+    assert len(digest) == 64
+    payload["failed_launch"]["optimizer_updates"] = 1
+    recovery_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="optimizer_updates"):
+        module._load_execution_recovery(
+            recovery_path,
+            source_checkpoint=source,
+            activation_audit=activation,
+        )
+
+
+def test_rescue_cli_rejects_resume_and_clean_recovery_laundering(tmp_path: Path) -> None:
+    script_path = ROOT / "scripts" / "train_classification_rescue.py"
+    spec = importlib.util.spec_from_file_location("train_classification_rescue", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    resume_args = module.build_parser().parse_args(
+        [
+            "--source-checkpoint",
+            "source.pth",
+            "--output-checkpoint",
+            "rescue.pth",
+            "--activation-audit",
+            "activation.json",
+            "--resume",
+        ]
+    )
+    with pytest.raises(ValueError, match="exactly one uninterrupted"):
+        module._resolved_paths(resume_args)
+
+    source = tmp_path / "checkpoint_final.pth"
+    source.write_bytes(b"source")
+    activation = tmp_path / "classification_rescue_activation.json"
+    activation.write_text("{}\n", encoding="utf-8")
+    canonical_recovery = tmp_path / "classification_rescue_zero_update_recovery.json"
+    canonical_recovery.write_text("{}\n", encoding="utf-8")
+    clean_args = module.build_parser().parse_args(
+        [
+            "--source-checkpoint",
+            str(source),
+            "--output-checkpoint",
+            str(tmp_path / "checkpoint_classification_rescue.pth"),
+            "--activation-audit",
+            str(activation),
+        ]
+    )
+    with pytest.raises(ValueError, match="Canonical execution-recovery evidence exists"):
+        module._resolved_paths(clean_args)
 
 
 def test_rescue_script_preserves_cumulative_resume_timing_and_manifest_binding() -> None:
@@ -443,3 +742,8 @@ def test_rescue_wrapper_never_deletes_the_python_ownership_lock() -> None:
     assert '"Local\\PancreasMultitaskPostTraining501Fold0"' in source
     assert "$postTrainingMutex.WaitOne(0)" in source
     assert "$postTrainingMutex.ReleaseMutex()" in source
+    assert "$recoveryAuditExplicit" in source
+    assert "Explicit zero-update execution-recovery audit is missing" in source
+    assert '$arguments += @("--recovery-audit", $resolvedRecoveryAudit)' in source
+    assert "Resuming this fixed rescue is prohibited" in source
+    assert '$arguments += "--resume"' not in source
