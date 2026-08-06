@@ -1,0 +1,15 @@
+{
+    "schema_version":  1,
+    "status":  "started_and_consumed",
+    "stage":  "single_locked_post_hoc_official_validation_reevaluation",
+    "started_at_utc":  "2026-08-06T16:59:40.5709669Z",
+    "final_candidate_lock":  {
+                                 "path":  "C:\\Users\\amirf\\OneDrive\\Desktop\\ML-Quiz-3DMedImg\\configs\\phd_final_candidate_lock_v5.json",
+                                 "sha256":  "8f508615ee0e6a0296506dbbc06f66e31dd46842cd585ef67f7c133c74c037db"
+                             },
+    "output_root":  "D:\\MLQuizWork\\phd_upgrade_v5\\official_validation_locked_v5",
+    "label_blind_prediction_complete":  false,
+    "pre_reference_manifest_written":  false,
+    "reference_access_started":  false,
+    "evaluation_invocation_count":  0
+}

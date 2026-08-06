@@ -1,0 +1,17 @@
+{
+    "schema_version":  1,
+    "status":  "started_and_consumed_no_recovery_rerun",
+    "stage":  "saved_output_official_evaluation_recovery",
+    "started_at_utc":  "2026-08-06T18:00:50.7824282Z",
+    "recovery_protocol_sha256":  "a2e5ff8bffcf5a07ba797cabe1d245b00e4a352c06f9ffd4b8246c43d5646fdd",
+    "recovery_execution_lock_sha256":  "903e231a19636494a6a215a0020d82e491ed2e26ef36ba4d3026c7bbec983543",
+    "final_candidate_lock_sha256":  "8f508615ee0e6a0296506dbbc06f66e31dd46842cd585ef67f7c133c74c037db",
+    "output_root":  "D:\\MLQuizWork\\phd_upgrade_v5\\official_validation_locked_v5",
+    "validation_images_path":  "D:\\MLQuizWork\\nnUNet_raw\\Dataset501_PancreasMultitask\\imagesVal",
+    "reference_masks_path":  "D:\\MLQuizWork\\nnUNet_raw\\Dataset501_PancreasMultitask\\labelsVal",
+    "reference_subtypes_path":  "D:\\MLQuizWork\\nnUNet_raw\\Dataset501_PancreasMultitask\\classification_manifest.json",
+    "recovery_inference_invocation_count":  0,
+    "total_official_inference_invocation_count":  1,
+    "official_evaluation_invocation_count":  0,
+    "reference_access_started":  false
+}
