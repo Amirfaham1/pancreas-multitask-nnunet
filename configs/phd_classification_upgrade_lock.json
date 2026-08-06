@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "lock_status": "frozen_before_train_only_feature_extraction_or_model_search",
+  "locked_at_utc": "2026-08-06T14:07:38.8804696Z",
+  "protocol_commit": "67548e0be5d60119e0097540269ec49d3aab73b6",
+  "objective": "Post-baseline inference-matched case-level subtype classifier upgrade",
+  "development_boundary": {
+    "allowed_split": "supplied_train_only",
+    "case_count": 252,
+    "class_counts": {
+      "0": 62,
+      "1": 106,
+      "2": 84
+    },
+    "case_ids_sha256_length_prefixed_sorted": "bc9eee511612fce42d700b256d26793e6d2c8aabe06f4bf8699bb2b1abbf17bb",
+    "official_validation_images_allowed_before_lock": false,
+    "official_validation_masks_allowed_before_lock": false,
+    "official_validation_labels_allowed_before_lock": false,
+    "official_validation_metrics_allowed_for_selection": false,
+    "test_data_allowed_for_selection": false,
+    "external_data_or_pretrained_weights_allowed": false,
+    "ground_truth_segmentation_features_allowed": false
+  },
+  "frozen_network": {
+    "architecture": "nnUNetv2_3d_fullres_ResEnc_M_shared_encoder",
+    "source_checkpoint_name": "checkpoint_classification_rescue.pth",
+    "source_checkpoint_sha256": "d7248e8903fd1f062687ae33a22ad0374ca1b9927445443dcde55dcde128d116",
+    "encoder_trainable": false,
+    "decoder_trainable": false,
+    "segmentation_outputs_may_change": false,
+    "classification_feature_source": "deepest_shared_encoder_feature_map"
+  },
+  "feature_extraction": {
+    "unit": "complete_preprocessed_case_sliding_window_bag",
+    "inference_matching": "identical_preprocessing_tiles_mirror_tta_and_model_predicted_segmentation_evidence_for_train_validation_and_test",
+    "per_tile_encoder_features": [
+      "320_channel_deepest_encoder_global_average"
+    ],
+    "per_tile_model_evidence": [
+      "mean_predicted_lesion_probability",
+      "maximum_predicted_lesion_probability",
+      "predicted_lesion_argmax_fraction",
+      "normalized_tile_center_xyz"
+    ],
+    "case_encoder_aggregates": [
+      "uniform_embedding_mean",
+      "predicted_lesion_mass_weighted_embedding_mean_with_1e-6_floor",
+      "mean_embedding_of_up_to_three_highest_predicted_lesion_mass_tiles",
+      "embedding_standard_deviation_population"
+    ],
+    "predicted_mask_ct_features": [
+      "voxel_spacing_xyz",
+      "image_shape_xyz",
+      "predicted_whole_pancreas_and_lesion_physical_volumes_and_ratio",
+      "predicted_whole_pancreas_and_lesion_bounding_box_physical_extents",
+      "predicted_lesion_centroid_relative_to_predicted_whole_pancreas_bounding_box",
+      "predicted_lesion_connected_component_count_and_largest_component_fraction",
+      "predicted_lesion_shape_covariance_eigenvalue_ratios",
+      "ct_intensity_quantiles_mean_standard_deviation_skewness_and_kurtosis_in_predicted_lesion",
+      "ct_intensity_quantiles_mean_and_standard_deviation_in_predicted_nonlesion_pancreas",
+      "lesion_minus_nonlesion_pancreas_intensity_contrasts",
+      "perilesional_ring_intensity_mean_and_standard_deviation"
+    ],
+    "empty_predicted_lesion_policy": "finite_zero_features_plus_explicit_empty_indicator",
+    "feature_dtype": "float32",
+    "ground_truth_masks_loaded": false,
+    "feature_views": [
+      "encoder_aggregates_plus_tile_evidence_summaries",
+      "encoder_aggregates_plus_tile_evidence_summaries_plus_predicted_mask_ct_features"
+    ]
+  },
+  "selection": {
+    "splitter": "RepeatedStratifiedKFold",
+    "folds": 5,
+    "repeat_seeds": [
+      20260806,
+      20260807,
+      20260808
+    ],
+    "primary_metric": "mean_across_repeats_of_complete_oof_three_class_macro_f1",
+    "secondary_metric": "lower_standard_deviation_of_repeat_oof_macro_f1",
+    "tie_tolerance": 0.002,
+    "tertiary_rule": "lower_candidate_id_lexicographic_order",
+    "all_scaling_pca_and_fitting_inside_each_training_fold": true,
+    "official_validation_evaluations_before_final_lock": 0
+  },
+  "candidate_grid": [
+    {
+      "family": "balanced_multinomial_logistic_regression",
+      "pipeline": "median_imputer_standard_scaler_logistic_regression_l2",
+      "C": [0.01, 0.1, 1.0, 10.0],
+      "max_iter": 5000
+    },
+    {
+      "family": "balanced_linear_svm",
+      "pipeline": "median_imputer_standard_scaler_linear_svc",
+      "C": [0.001, 0.01, 0.1, 1.0],
+      "max_iter": 20000
+    },
+    {
+      "family": "balanced_rbf_svm",
+      "pipeline": "median_imputer_standard_scaler_pca_rbf_svc",
+      "pca_variance": [0.9, 0.95],
+      "C": [1.0, 10.0],
+      "gamma": "scale"
+    },
+    {
+      "family": "balanced_extra_trees",
+      "pipeline": "median_imputer_extra_trees",
+      "n_estimators": 600,
+      "max_features": "sqrt",
+      "min_samples_leaf": [2, 5],
+      "class_weight": "balanced"
+    }
+  ],
+  "final_fit": {
+    "training_cases": 252,
+    "selected_pipeline_refit_on_all_training_cases": true,
+    "random_seed": 20260806,
+    "prediction_rule": "argmax_of_selected_pipeline_class_scores_or_probabilities",
+    "official_validation_runs_after_candidate_lock": 1,
+    "replacement_rule": "replace_baseline_classifier_only_if_official_macro_f1_is_strictly_greater_than_0.46399340516987575_and_all_contracts_pass"
+  },
+  "required_audit_artifacts": [
+    "train_case_manifest_with_only_ids_labels_and_source_hashes",
+    "feature_schema_and_implementation_hash",
+    "feature_matrix_hash",
+    "all_candidate_repeat_fold_scores",
+    "all_oof_predictions",
+    "selection_decision",
+    "final_fitted_classifier_hash",
+    "frozen_encoder_and_decoder_hashes_before_and_after",
+    "software_versions_and_rng_seeds",
+    "proof_of_zero_official_validation_access_before_candidate_lock"
+  ]
+}
