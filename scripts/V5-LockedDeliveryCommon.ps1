@@ -31,6 +31,8 @@ $script:V5DecisionLockSha256 =
     "e28a303c7d3da5dc7857ecc72787b6746d1e689e83167c500d4d2823c5ea540f"
 $script:V5SpeedLockSha256 =
     "3a57ab79147a6dd9ab4ee3fa99fdb2be978e9c60f290cead7a52298673e926aa"
+$script:V5StockSpeedLockSha256 =
+    "563d9d5e4fbe0f92653c6b7295c476d0ddf5d239c47beb1948410bbb80a7c2e2"
 $script:V5DeterminismLockSha256 =
     "33b5aed4027651f999875e2340a65173c620c5673f845a186115cd3a7adb1ddd"
 $script:V5StockExportLockSha256 =
@@ -458,6 +460,11 @@ function Assert-V5ProtocolLocks {
             Name = "inference_speed"
             Path = "configs/inference_speed_benchmark_v3.json"
             Sha256 = $script:V5SpeedLockSha256
+        },
+        [pscustomobject]@{
+            Name = "inference_speed_stock_gate"
+            Path = "configs/inference_speed_stock_gate_v1.json"
+            Sha256 = $script:V5StockSpeedLockSha256
         },
         [pscustomobject]@{
             Name = "inference_determinism"

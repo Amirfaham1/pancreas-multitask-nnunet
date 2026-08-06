@@ -85,8 +85,9 @@ def test_common_helper_hard_binds_every_known_final_artifact() -> None:
     for digest in (
         "a8c2147493718acc96e4aa5dc471bf3f3277f0b99e8a8f7620bf966ab7b70d11",
         "e28a303c7d3da5dc7857ecc72787b6746d1e689e83167c500d4d2823c5ea540f",
-        "3a57ab79147a6dd9ab4ee3fa99fdb2be978e9c60f290cead7a52298673e926aa",
-        "33b5aed4027651f999875e2340a65173c620c5673f845a186115cd3a7adb1ddd",
+    "3a57ab79147a6dd9ab4ee3fa99fdb2be978e9c60f290cead7a52298673e926aa",
+    "563d9d5e4fbe0f92653c6b7295c476d0ddf5d239c47beb1948410bbb80a7c2e2",
+    "33b5aed4027651f999875e2340a65173c620c5673f845a186115cd3a7adb1ddd",
         "bf309ae1ff8475b0985089ac1db2ef6b35383be34d7eeda0e9c6e63478f19503",
     ):
         assert digest in COMMON_SOURCE
@@ -838,6 +839,12 @@ def test_complete_final_candidate_lock_accepts_real_train_only_chain(
                 "path": "configs/inference_speed_benchmark_v3.json",
                 "sha256": (
                     "3a57ab79147a6dd9ab4ee3fa99fdb2be978e9c60f290cead7a52298673e926aa"
+                ),
+            },
+            "inference_speed_stock_gate": {
+                "path": "configs/inference_speed_stock_gate_v1.json",
+                "sha256": (
+                    "563d9d5e4fbe0f92653c6b7295c476d0ddf5d239c47beb1948410bbb80a7c2e2"
                 ),
             },
             "inference_determinism": {
