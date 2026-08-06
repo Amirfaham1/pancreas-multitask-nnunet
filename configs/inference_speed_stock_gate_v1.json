@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "lock_status": "frozen_before_any_stock_comparator_implementation_or_raw_volume_timing",
+  "locked_at_utc": "2026-08-06T15:20:43.7706555Z",
+  "objective": "Test the assignment's strict runtime requirement against the installed stock nnUNetv2 prediction entry point, while leaving the already-frozen v5 candidate unchanged",
+  "reason_for_additional_comparator": {
+    "trigger": "An independent read-only protocol review performed before official validation/test access found that the v3 full-v5 versus dependency-pruned-v5 comparison supports a causal implementation optimization but is not, by itself, evidence against stock/default nnUNetv2 inference.",
+    "relation_to_v3": "This lock adds an external stock reference; it does not alter the v3 neural-only candidate, its outputs, or any model decision.",
+    "v3_lock_path": "configs/inference_speed_benchmark_v3.json",
+    "v3_lock_sha256": "3a57ab79147a6dd9ab4ee3fa99fdb2be978e9c60f290cead7a52298673e926aa",
+    "candidate_raw_volume_timing_before_this_lock": false,
+    "official_validation_or_test_access_before_this_lock": false
+  },
+  "stock_reference": {
+    "package": "nnunetv2",
+    "version": "2.8.1",
+    "entry_point": "nnUNetv2_predict",
+    "predict_from_raw_data_sha256": "c350e3202a7a67c3aef12e9206a744add442110ff8a4377c1f9640104b20a31f",
+    "dataset_id": 501,
+    "trainer": "nnUNetTrainerPancreasMultiTask",
+    "plans": "nnUNetResEncUNetMPlans",
+    "configuration": "3d_fullres",
+    "folds": [
+      0
+    ],
+    "checkpoint": "checkpoint_classification_rescue.pth",
+    "device": "cuda",
+    "tile_step_size": 0.5,
+    "tta_enabled": true,
+    "preprocessing_processes": 3,
+    "segmentation_export_processes": 3,
+    "perform_everything_on_device": true,
+    "save_probabilities": false,
+    "torch_compile": false,
+    "workload": "stock segmentation prediction and NIfTI export"
+  },
+  "candidate": {
+    "implementation": "the unchanged dependency-pruned neural-only v5 predictor frozen by the v3 lock",
+    "classification_mode": "neural-v5",
+    "v5_extraction_mode": "neural_only",
+    "folds": [
+      0
+    ],
+    "checkpoint": "same exact file and SHA-256 as the stock reference",
+    "neural_case_head_bundle": "same final frozen bundle and SHA-256 in every run",
+    "device": "same single CUDA GPU",
+    "tile_step_size": 0.5,
+    "tta_enabled": true,
+    "mirror_axes": [
+      0,
+      1,
+      2
+    ],
+    "tile_batch_size": 1,
+    "tta_batch_size": 1,
+    "gaussian_enabled": true,
+    "torch_compile": false,
+    "workload": "segmentation prediction, neural-v5 subtype prediction, NIfTI export, and subtype CSV export",
+    "candidate_workload_is_strictly_broader_than_reference": true
+  },
+  "shared_contract": {
+    "input_cases": "all 72 held-out test images discovered from one identical directory",
+    "input_inventory_and_hashes_must_match": true,
+    "model_checkpoint_and_component_hashes_must_match": true,
+    "plans_and_preprocessing_must_match": true,
+    "same_gpu_and_driver": true,
+    "same_power_and_thermal_environment_recorded": true,
+    "no_disabled_tta": true,
+    "no_increased_step_size": true,
+    "no_test_targets_or_submission_feedback": true
+  },
+  "timing": {
+    "arm_order": [
+      "stock_reference_1",
+      "candidate_1",
+      "candidate_2",
+      "stock_reference_2"
+    ],
+    "fresh_process_per_run": true,
+    "repeats_per_arm": 2,
+    "warmup": "none",
+    "timer": "external monotonic wall clock around each complete child process",
+    "scope": "process startup plus model/head initialization, preprocessing, inference, geometry restoration, and file export",
+    "statistic": "arithmetic mean of total wall-clock seconds across the two runs, divided by 72 for seconds per case",
+    "outputs_retained_for_audit": true
+  },
+  "numerical_and_inventory_gates": {
+    "stock_and_candidate_segmentation_case_names_must_match_exactly": true,
+    "segmentation_geometry_must_match_exactly": true,
+    "segmentation_dtype_must_match_exactly": true,
+    "hard_segmentation_masks_must_match_exactly": true,
+    "candidate_repeats_must_have_identical_subtype_decisions": true,
+    "candidate_repeats_maximum_absolute_probability_delta": 1e-6,
+    "expected_case_count": 72,
+    "oom_fallbacks_allowed": 0,
+    "failed_cases_allowed": 0
+  },
+  "assignment_speed_acceptance": {
+    "candidate_mean_must_be_at_most_reference_fraction": 0.9,
+    "minimum_runtime_reduction_percent": 10.0,
+    "all_numerical_and_inventory_gates_must_pass": true,
+    "interpretation_if_passed": "The unchanged final multi-task candidate, despite also producing subtype predictions, was at least 10 percent faster end to end than the installed stock nnUNetv2 segmentation prediction entry point under matched TTA, step size, checkpoint, plans, inputs, and hardware.",
+    "interpretation_if_failed": "The strict assignment speed threshold is unproven and must not be claimed. The narrower v3 dead-computation result may still be reported separately with its exact comparator."
+  },
+  "finalization": {
+    "train_only functional smoke_allowed_before_final_candidate_lock": true,
+    "train_only_timing_smoke_allowed": false,
+    "official_validation_inputs_or_targets_allowed": false,
+    "test_inputs_allowed_only_after_final_candidate_bundle_and_code_hash_lock": true,
+    "test_targets_or_submission_scores_allowed": false,
+    "candidate_changes_after_this_lock_allowed": false,
+    "stock_comparator_parameter_changes_after_this_lock_allowed": false,
+    "final_benchmark_runs": 1
+  },
+  "claim_boundary": {
+    "globally_fastest_model_claim_allowed": false,
+    "hardware_generalization_claim_allowed": false,
+    "clinical_runtime_claim_allowed": false,
+    "stock_comparator_claim_requires_this_gate_to_pass": true,
+    "v3_full_to_pruned_claim_must_remain_separate": true
+  }
+}
