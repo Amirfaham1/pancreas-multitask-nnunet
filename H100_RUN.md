@@ -28,6 +28,17 @@ From the extracted code directory:
 bash scripts/run_h100_v6.sh /absolute/path/input_bundle /absolute/path/h100_output
 ```
 
+For the supplied two-archive handoff:
+
+```bash
+mkdir h100_job && cd h100_job
+mkdir code
+tar -xzf ../mlquiz_v6_code.tar.gz -C code
+tar -xf ../mlquiz_v6_input_bundle.tar
+cd code
+bash scripts/run_h100_v6.sh "$(realpath ../input_bundle)" "$(realpath -m ../h100_output)"
+```
+
 The launcher creates an isolated `.venv-h100`, verifies every private input hash, runs
 the focused tests, extracts all 252 cases, runs the locked 15-fold nested train-only
 selection, fits the three final seeds, and writes local JSON/NPZ/PTH evidence. It
