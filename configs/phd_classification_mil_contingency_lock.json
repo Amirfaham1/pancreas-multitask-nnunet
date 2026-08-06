@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "lock_status": "frozen_before_primary_v3_feature_extraction_or_candidate_cv",
+  "locked_at_utc": "2026-08-06T14:20:04.6909083Z",
+  "primary_lock": {
+    "path": "configs/phd_classification_upgrade_lock_v3.json",
+    "git_commit": "790f7704668981c56bbf815c2571d4529ab4e4e7",
+    "sha256": "855e2be5a2dffa19902e4a81675bc8890801a023bd5e531dbb6fe0886c3c86d0"
+  },
+  "purpose": "One bounded spatial multi-instance fallback if fixed statistical aggregation is unstable or insufficient on training-only repeated CV",
+  "development_boundary": {
+    "allowed_split": "supplied_train_only",
+    "case_count": 252,
+    "case_ids_sha256_length_prefixed_sorted": "bc9eee511612fce42d700b256d26793e6d2c8aabe06f4bf8699bb2b1abbf17bb",
+    "combined_train_validation_metadata_may_be_parsed": false,
+    "official_validation_images_allowed": false,
+    "official_validation_masks_allowed": false,
+    "official_validation_labels_allowed": false,
+    "official_validation_metrics_allowed": false,
+    "test_data_allowed_for_selection": false,
+    "ground_truth_masks_allowed_as_features": false,
+    "case_ids_paths_filenames_or_enumeration_order_allowed_as_features": false
+  },
+  "trigger": {
+    "evaluate_contingency_if_any": [
+      "primary_v3_selected_mean_repeat_oof_macro_f1_below_0.66",
+      "primary_v3_selected_repeat_oof_macro_f1_population_sd_above_0.05",
+      "primary_v3_selected_minimum_repeat_per_class_recall_below_0.55"
+    ],
+    "otherwise_contingency_must_not_be_trained": true
+  },
+  "frozen_backbone": {
+    "architecture": "nnUNetv2_3d_fullres_ResEnc_M_shared_encoder",
+    "checkpoint_name": "checkpoint_classification_rescue.pth",
+    "checkpoint_sha256": "d7248e8903fd1f062687ae33a22ad0374ca1b9927445443dcde55dcde128d116",
+    "encoder_component_sha256": "324f5f75debb9885e270102a8222ed3248483ea21ff2bb6fb0177730f2b85ff1",
+    "decoder_component_sha256": "b38d332ce7d812b98b03389777a303f6e739a789cc685cbf4d52a413ba4711f2",
+    "classification_component_sha256": "1c6378fe0a2f8e792b183c8b0333b164bf2d67951147c96fadae390bd7cc6df8",
+    "all_checkpoint_parameters_trainable": false,
+    "segmentation_outputs_may_change": false
+  },
+  "bag_extraction": {
+    "source_encoder_stage": 3,
+    "source_channels": 256,
+    "source_grid_for_64x128x192_tile": [16, 16, 24],
+    "tile_ranking": "descending_model_predicted_mean_lesion_probability_with_numeric_content_hash_tie_break",
+    "maximum_tiles_per_case": 3,
+    "short_bag_policy": "use_all_available_tiles_and_attention_mask_padding",
+    "stored_stage3_grid": [4, 4, 6],
+    "stored_stage3_resampling": "adaptive_average_pool_3d",
+    "stored_model_prediction_channels": [
+      "lesion_probability",
+      "whole_pancreas_probability"
+    ],
+    "stored_prediction_resampling": "trilinear_align_corners_false_then_adaptive_average_pool_3d",
+    "mirror_rule": "pool_stage3_and_prediction_maps_in_each_mirror_view_then_arithmetic_mean_after_restoring_spatial_orientation",
+    "dtype_on_disk": "float16",
+    "ground_truth_masks_loaded": false
+  },
+  "adapter": {
+    "name": "fixed_stage3_lesion_aware_spatial_mil",
+    "per_tile_projection": [
+      "conv3d_256_to_32_kernel_1_bias_true",
+      "groupnorm_8_groups",
+      "gelu"
+    ],
+    "spatial_fusion": [
+      "concatenate_projected_stage3_with_lesion_and_whole_probability_channels",
+      "conv3d_34_to_32_kernel_3_padding_1_bias_true",
+      "groupnorm_8_groups",
+      "gelu",
+      "adaptive_global_average_pool"
+    ],
+    "gated_case_attention": [
+      "tanh_linear_32_to_64_no_bias",
+      "sigmoid_linear_32_to_64_no_bias",
+      "elementwise_product",
+      "linear_64_to_1_no_bias",
+      "add_0.5_times_log_predicted_lesion_mass_plus_1e-6",
+      "masked_softmax_across_up_to_three_tiles"
+    ],
+    "classification_head": [
+      "linear_32_to_32",
+      "gelu",
+      "dropout_0.25",
+      "linear_32_to_3"
+    ],
+    "maximum_trainable_parameters": 60000
+  },
+  "training": {
+    "splitter": "RepeatedStratifiedKFold",
+    "folds": 5,
+    "repeat_seeds": [20260806, 20260807, 20260808],
+    "initialization_seed_per_repeat_fold": "repeat_seed_plus_fold_index",
+    "epochs": 150,
+    "early_stopping": false,
+    "optimizer": "AdamW",
+    "learning_rate": 0.0003,
+    "weight_decay": 0.0001,
+    "batch_size_cases": 16,
+    "gradient_clip_norm": 1.0,
+    "loss": "inverse_frequency_weighted_cross_entropy",
+    "label_smoothing": 0.05,
+    "scheduler": "cosine_annealing_to_zero_over_150_epochs",
+    "augmentation": "none_on_frozen_feature_bags",
+    "model_candidates": 1
+  },
+  "selection_against_primary": {
+    "primary_metric": "mean_across_repeats_of_complete_oof_three_class_macro_f1",
+    "minimum_gain_over_primary_v3": 0.02,
+    "minimum_repeat_per_class_recall": 0.55,
+    "eligible_only_if_both_conditions_hold": true,
+    "if_ineligible": "retain_primary_v3_candidate",
+    "final_refit": "train_once_on_all_252_cases_for_150_epochs_with_seed_20260806"
+  },
+  "known_limitations_to_disclose": [
+    "The frozen encoder and rescue head were originally trained using all 252 training subtype labels, so downstream head OOF estimates are not unbiased end-to-end generalization estimates.",
+    "Only the new adapter is cross-fitted; the shared representation is fixed and common to all folds.",
+    "The contingency is a post-baseline train-only experiment and was not part of the original joint-training plan."
+  ],
+  "required_audits": [
+    "trigger_decision",
+    "feature_bag_schema_and_hash",
+    "all_repeat_fold_losses_and_predictions",
+    "primary_vs_contingency_oof_comparison",
+    "parameter_count",
+    "frozen_component_hashes_before_and_after",
+    "renaming_enumeration_and_tile_batch_invariance",
+    "zero_official_validation_access_before_final_candidate_lock"
+  ]
+}
