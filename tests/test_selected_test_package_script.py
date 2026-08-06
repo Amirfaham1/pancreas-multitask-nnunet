@@ -331,6 +331,24 @@ def test_selected_test_wrapper_parses_without_running_pipeline() -> None:
     assert completed.returncode == 0, completed.stderr
 
 
+def test_script_relative_defaults_are_resolved_after_parameter_binding() -> None:
+    """Protect Windows PowerShell 5.1 from an empty `$PSScriptRoot at bind time."""
+    parameter_block = SOURCE[SOURCE.index("param(") : SOURCE.index(")\n\nSet-StrictMode")]
+    assert "Join-Path $PSScriptRoot" not in parameter_block
+
+    body_start = SOURCE.index('$ErrorActionPreference = "Stop"')
+    delivery_default = SOURCE.index(
+        '$DeliveryRoot = Join-Path $PSScriptRoot "..\\delivery"', body_start
+    )
+    source_default = SOURCE.index(
+        "$SourceTestImages = Join-Path $PSScriptRoot (", body_start
+    )
+    path_resolution = SOURCE.index(
+        "$resolvedDeliveryRoot = [IO.Path]::GetFullPath($DeliveryRoot)", body_start
+    )
+    assert body_start < delivery_default < source_default < path_resolution
+
+
 def test_wrapper_holds_shared_process_lifetime_mutex_across_pipeline() -> None:
     assert '"Local\\PancreasMultitaskPostTraining501Fold0"' in SOURCE
     assert "$postTrainingMutex.WaitOne(0)" in SOURCE

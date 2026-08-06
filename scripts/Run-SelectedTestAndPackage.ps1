@@ -59,12 +59,8 @@ param(
     [string] $SelectionPath,
     [string] $PredictionDirectory,
     [string] $EvidenceDirectory,
-    [ValidateNotNullOrEmpty()]
-    [string] $DeliveryRoot = (Join-Path $PSScriptRoot "..\delivery"),
-    [ValidateNotNullOrEmpty()]
-    [string] $SourceTestImages = (Join-Path $PSScriptRoot (
-        "..\ML-Quiz-3DMedImg\ML-Quiz-3DMedImg\test"
-    )),
+    [string] $DeliveryRoot,
+    [string] $SourceTestImages,
     [string] $PythonExecutable,
     [ValidateSet("cuda", "cpu")]
     [string] $Device = "cuda"
@@ -72,6 +68,18 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+# `$PSScriptRoot is not reliably populated while default parameter expressions
+# are being bound under Windows PowerShell 5.1. Resolve script-relative
+# defaults only after the script body has started.
+if ([string]::IsNullOrWhiteSpace($DeliveryRoot)) {
+    $DeliveryRoot = Join-Path $PSScriptRoot "..\delivery"
+}
+if ([string]::IsNullOrWhiteSpace($SourceTestImages)) {
+    $SourceTestImages = Join-Path $PSScriptRoot (
+        "..\ML-Quiz-3DMedImg\ML-Quiz-3DMedImg\test"
+    )
+}
 
 $expectedCount = 72
 $archiveName = "Amirfaham_Fallahpour_results.zip"
