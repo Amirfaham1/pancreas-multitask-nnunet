@@ -162,6 +162,10 @@ $$
 L_{seg}=L_{Dice}+L_{CE}.
 $$
 
+The nnU-Net implementation represents the overlap term as negative soft Dice,
+so this summed optimization objective can legitimately cross below zero as
+overlap improves; its absolute sign is not itself a performance metric.
+
 This combination addresses complementary failure modes. Dice reduces sensitivity to the overwhelming number of background voxels, while cross-entropy supplies stable local class supervision. Foreground-aware patch sampling separately increases exposure to pancreatic structures; it is not a replacement for an imbalance-aware loss.
 
 ## Hybrid cross-attention classification branch
