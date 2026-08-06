@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "lock_status": "frozen_before_any_eligible_case_feature_extraction_or_neural_head_oof_training",
+  "locked_at_utc": "2026-08-06T14:32:50.0930776Z",
+  "neural_head_lock": {
+    "path": "configs/phd_neural_case_head_lock_v5.json",
+    "sha256": "a8c2147493718acc96e4aa5dc471bf3f3277f0b99e8a8f7620bf966ab7b70d11"
+  },
+  "supersedes": {
+    "path": "configs/phd_classification_decision_lock_v4.json",
+    "sha256": "b21fcf850f33a0681637834d752efceb0122783253b78daf4e26a0ef0ca5528f",
+    "reason": "Class offsets must calibrate only the selected assignment-conforming neural case head, not a v3 classical diagnostic."
+  },
+  "scope": {
+    "eligible_base": "one_train_only_selected_v5_neural_case_head",
+    "v3_classical_scores_allowed": false,
+    "official_validation_scores_or_labels_allowed": false,
+    "test_scores_allowed": false,
+    "identifiers_paths_filenames_or_order_allowed": false
+  },
+  "score_contract": {
+    "class_order": [0, 1, 2],
+    "input": "selected_neural_head_three_logits",
+    "normalization": "float64_log_softmax",
+    "plain_rule": "argmax_log_softmax_score",
+    "plain_rule_must_equal_argmax_raw_logits": true
+  },
+  "offset_grid": {
+    "identifiability_reference_class": 1,
+    "class_1_offset": 0.0,
+    "class_0_offsets": [-1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0],
+    "class_2_offsets": [-1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0],
+    "candidate_count": 81,
+    "decision": "argmax_log_softmax_score_plus_class_offset"
+  },
+  "cross_fitted_evaluation": {
+    "score_source": "selected_neural_head_complete_oof_logits_for_each_repeat",
+    "splitter": "StratifiedKFold",
+    "folds": 5,
+    "repeat_seeds": [20260806, 20260807, 20260808],
+    "content_canonical_order_before_splitting": true,
+    "procedure": "within_each_repeat_fit_offset_on_four_calibration_folds_and_apply_once_to_the_held_calibration_fold",
+    "primary_metric": "mean_across_repeats_of_complete_cross_fitted_calibrated_oof_macro_f1",
+    "secondary_metric": "higher_minimum_repeat_per_class_recall",
+    "grid_tie_rule": [
+      "higher_macro_f1",
+      "higher_minimum_per_class_recall",
+      "lower_l1_offset_norm",
+      "lexicographically_lower_class_0_then_class_2_offset"
+    ]
+  },
+  "activation": {
+    "minimum_mean_macro_f1_gain_over_plain_selected_neural_head": 0.01,
+    "maximum_allowed_drop_in_minimum_repeat_per_class_recall": 0.02,
+    "activate_only_if_both_conditions_hold": true,
+    "otherwise_offsets": [0.0, 0.0, 0.0]
+  },
+  "final_offset_fit": {
+    "case_score": "arithmetic_mean_of_the_three_selected_head_oof_log_softmax_vectors",
+    "fit_scope": "all_252_training_cases_once_after_activation",
+    "grid_and_tie_rule": "identical_to_cross_fitted_evaluation",
+    "official_validation_adjustment_allowed": false
+  },
+  "required_audits": [
+    "selected_neural_head_all_repeat_oof_logits",
+    "every_calibration_fold_offset_and_held_prediction",
+    "plain_vs_calibrated_repeat_metrics_and_per_class_recalls",
+    "activation_decision",
+    "final_offset_vector_or_exact_zero_vector",
+    "zero_official_validation_test_or_identifier_use"
+  ]
+}

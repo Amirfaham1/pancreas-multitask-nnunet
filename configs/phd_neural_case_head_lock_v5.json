@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "lock_status": "frozen_before_any_eligible_case_feature_extraction_or_neural_head_oof_training",
+  "locked_at_utc": "2026-08-06T14:32:04.0575343Z",
+  "protocol_commit_before_lock": "76c6828c90ca45ce311b1b020b93449edbd01193",
+  "supersedes_for_final_candidate_eligibility": [
+    {
+      "path": "configs/phd_classification_upgrade_lock_v3.json",
+      "sha256": "855e2be5a2dffa19902e4a81675bc8890801a023bd5e531dbb6fe0886c3c86d0",
+      "new_role": "classical_train_only_representation_diagnostic_not_eligible_as_primary_official_candidate"
+    },
+    {
+      "path": "configs/phd_classification_mil_contingency_lock.json",
+      "sha256": "7179d3f6f0a1dcc4c90e4988c217a4e4d13f37febd72b45cff50028a6af94a14",
+      "new_role": "superseded_triggered_contingency;_neural_case_head_comparison_is_now_unconditional"
+    }
+  ],
+  "assignment_conformance": {
+    "model_family": "multi_task_deep_learning",
+    "required_backbone": "nnUNetv2_3d_fullres_ResEnc_M",
+    "shared_3d_encoder_retained": true,
+    "separate_segmentation_decoder_retained": true,
+    "separate_neural_case_classification_head_required": true,
+    "cross_attention_pooling_candidate_included": true,
+    "classical_posthoc_estimator_eligible_as_primary": false
+  },
+  "development_boundary": {
+    "allowed_split": "isolated_supplied_train_only",
+    "case_count": 252,
+    "class_counts": {"0": 62, "1": 106, "2": 84},
+    "case_ids_sha256_length_prefixed_sorted": "bc9eee511612fce42d700b256d26793e6d2c8aabe06f4bf8699bb2b1abbf17bb",
+    "combined_train_validation_metadata_may_be_read": false,
+    "official_validation_images_masks_labels_or_metrics_may_be_read": false,
+    "test_data_may_be_read": false,
+    "external_data_or_pretrained_weights_may_be_used": false,
+    "ground_truth_segmentation_may_be_used_as_a_feature": false,
+    "case_ids_paths_filenames_or_enumeration_order_may_be_used_as_features_or_split_keys": false
+  },
+  "frozen_multi_task_network": {
+    "checkpoint_name": "checkpoint_classification_rescue.pth",
+    "checkpoint_sha256": "d7248e8903fd1f062687ae33a22ad0374ca1b9927445443dcde55dcde128d116",
+    "encoder_component_sha256": "324f5f75debb9885e270102a8222ed3248483ea21ff2bb6fb0177730f2b85ff1",
+    "decoder_component_sha256": "b38d332ce7d812b98b03389777a303f6e739a789cc685cbf4d52a413ba4711f2",
+    "rescue_pool_and_head_component_sha256": "1c6378fe0a2f8e792b183c8b0333b164bf2d67951147c96fadae390bd7cc6df8",
+    "encoder_trainable": false,
+    "decoder_trainable": false,
+    "rescue_pool_and_head_trainable": false,
+    "segmentation_outputs_may_change": false
+  },
+  "case_bag_extraction": {
+    "preprocessing_tiles_gaussian_and_mirror_tta": "identical_to_production_joint_inference",
+    "ranking_signal": "model_predicted_mean_lesion_probability_per_tile",
+    "maximum_ranked_tiles": 3,
+    "ranking_tie_break": "sha256_of_numeric_stage3_tile_content",
+    "short_bag_policy": "use_every_available_tile_and_mask_padding",
+    "stage3_source_channels": 256,
+    "stage3_source_grid_for_standard_tile": [16, 16, 24],
+    "cached_stage3_grid": [4, 4, 6],
+    "stage3_cache_operation": "adaptive_average_pool_3d_per_mirror_then_restore_orientation_and_mean",
+    "cached_prediction_maps": [
+      "model_predicted_lesion_probability",
+      "model_predicted_whole_pancreas_probability"
+    ],
+    "prediction_cache_operation": "trilinear_to_stage3_align_corners_false_then_adaptive_average_pool_3d_per_mirror_then_restore_orientation_and_mean",
+    "frozen_rescue_summary": [
+      "uniform_all_tile_mean_rescue_logits_3",
+      "uniform_all_tile_mean_rescue_probabilities_3"
+    ],
+    "shared_encoder_global_summary": [
+      "uniform_all_tile_mean_stage5_global_mean_320",
+      "predicted_lesion_mass_weighted_all_tile_mean_stage5_global_mean_320"
+    ],
+    "all_tile_summary_dimension": 646,
+    "ground_truth_masks_loaded": false,
+    "cache_dtype_for_spatial_maps": "float16",
+    "training_compute_dtype": "float32"
+  },
+  "shared_frontend": {
+    "spatial_input_channels": 258,
+    "channel_order": "stage3_256_then_lesion_probability_then_whole_pancreas_probability",
+    "projection": [
+      "conv3d_258_to_64_kernel_1_bias_true",
+      "groupnorm_8_groups",
+      "gelu"
+    ],
+    "summary_projection": [
+      "layernorm_646",
+      "linear_646_to_64",
+      "gelu"
+    ]
+  },
+  "candidate_heads": [
+    {
+      "candidate_id": "neural_lesion_mean_mil",
+      "role": "case_level_neural_mean_pooling_control",
+      "tile_spatial_statistics": [
+        "global_mean_of_projected_64_channel_map",
+        "model_predicted_lesion_probability_weighted_mean_of_projected_map",
+        "model_predicted_whole_pancreas_probability_weighted_mean_of_projected_map"
+      ],
+      "tile_descriptor_dimension": 192,
+      "case_tile_aggregation": [
+        "uniform_mean_across_available_tile_descriptors_192",
+        "predicted_lesion_mass_weighted_mean_across_available_tile_descriptors_192"
+      ],
+      "case_spatial_dimension": 384,
+      "concatenate_summary_projection_dimension": 64,
+      "classifier": [
+        "linear_448_to_128",
+        "gelu",
+        "dropout_0.25",
+        "linear_128_to_3"
+      ]
+    },
+    {
+      "candidate_id": "neural_two_query_cross_attention_mil",
+      "role": "primary_assignment_recommended_cross_attention_pooling_candidate",
+      "tokenization": "flatten_each_available_projected_4x4x6_tile_map_in_ranked_tile_then_spatial_order",
+      "maximum_token_count": 288,
+      "learned_queries": ["lesion_query_64", "global_context_query_64"],
+      "cross_attention": {
+        "implementation": "torch_multiheadattention_batch_first",
+        "embedding_dimension": 64,
+        "heads": 4,
+        "attention_dropout": 0.0,
+        "query_residual_then_layernorm": true,
+        "additive_attention_prior": "0.5_times_log_tile_predicted_lesion_mass_plus_1e-6_repeated_for_each_tile_token_and_attention_head"
+      },
+      "case_attention_dimension": 128,
+      "concatenate_summary_projection_dimension": 64,
+      "classifier": [
+        "linear_192_to_128",
+        "gelu",
+        "dropout_0.25",
+        "linear_128_to_3"
+      ]
+    }
+  ],
+  "parameter_policy": {
+    "trainable_modules": "selected_new_neural_case_head_only",
+    "maximum_trainable_parameters_per_candidate": 150000,
+    "candidate_count": 2
+  },
+  "training": {
+    "splitter": "RepeatedStratifiedKFold",
+    "folds": 5,
+    "repeat_seeds": [20260806, 20260807, 20260808],
+    "content_canonical_order_before_splitting": true,
+    "trajectories_per_candidate": 15,
+    "epochs": 150,
+    "early_stopping": false,
+    "batch_size_cases": 16,
+    "sampler": "deterministic_class_balanced_sampling_with_replacement_each_epoch",
+    "samples_per_epoch": 256,
+    "sampler_seed": "repeat_seed_plus_fold_index_times_1000_plus_epoch",
+    "loss": "unweighted_cross_entropy",
+    "label_smoothing": 0.05,
+    "class_weighting_in_loss": false,
+    "optimizer": "AdamW",
+    "learning_rate": 0.0003,
+    "weight_decay": 0.0001,
+    "gradient_clip_norm": 1.0,
+    "scheduler": "cosine_annealing_lr_to_zero_over_150_epochs",
+    "mixed_precision": false,
+    "data_augmentation_on_cached_bags": false,
+    "focal_loss": "excluded_prospectively_to_avoid_a_second_loss_choice_and_small_sample_optimization_risk",
+    "smote": "excluded_prospectively_because_synthetic_interpolation_in_learned_high_dimensional_anatomical_feature_space_is_not_valid",
+    "double_imbalance_correction": "prohibited; balanced_sampler_is_not_combined_with_class_weighted_loss"
+  },
+  "train_only_selection": {
+    "primary_metric": "mean_across_three_repeats_of_complete_oof_three_class_macro_f1",
+    "secondary_metric": "higher_minimum_repeat_per_class_recall",
+    "tie_band_macro_f1": 0.01,
+    "tie_rule": "if_mean_macro_f1_difference_is_at_most_0.01_choose_higher_minimum_repeat_per_class_recall;_if_recall_difference_is_at_most_0.01_choose_neural_lesion_mean_mil",
+    "all_candidate_repeat_fold_logits_predictions_losses_and_seeds_retained": true,
+    "selected_head_refit": "all_252_training_cases_for_exactly_150_epochs_with_seed_20260806",
+    "official_validation_used_for_selection": false
+  },
+  "final_candidate_policy": {
+    "eligible_candidates": [
+      "neural_lesion_mean_mil",
+      "neural_two_query_cross_attention_mil"
+    ],
+    "v3_classical_candidate_eligible": false,
+    "baseline_rescue_neural_head_remains_fallback_if_upgrade_fails_audit": true,
+    "official_validation_runs_after_neural_head_and_offsets_are_hash_locked": 1,
+    "replacement_requires": "strict_macro_f1_improvement_over_baseline_0.46399340516987575_and_all_submission_contracts"
+  },
+  "mandatory_disclosures": [
+    "The shared encoder and rescue head were trained using all 252 supplied training subtype labels; head-only OOF estimates compare new heads but are not unbiased end-to-end generalization estimates.",
+    "The encoder, decoder, and original rescue head are frozen and common to every OOF fold.",
+    "This is a post-baseline train-only extension undertaken after the initial official validation result had been observed.",
+    "No official validation target is used for architecture, training, selection, calibration, or stopping."
+  ],
+  "required_audits": [
+    "complete_train_only_case_and_cache_manifest",
+    "identifier_renaming_order_and_tile_batch_invariance",
+    "candidate_parameter_counts_and_initial_state_hashes",
+    "all_repeat_fold_training_histories_logits_predictions_and_metrics",
+    "deterministic_selection_decision",
+    "final_refit_state_hash",
+    "frozen_component_hashes_before_and_after",
+    "zero_official_validation_and_test_access_before_final_candidate_lock"
+  ]
+}
