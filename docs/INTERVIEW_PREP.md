@@ -1,12 +1,12 @@
 # Technical Interview Preparation
 
-This document is intentionally a scaffold until the implementation and validation results are frozen. It is designed to help Amirfaham explain the project accurately after submission—not to memorize claims that the artifacts do not support.
+This document is a frozen, evidence-backed interview aid. It is designed to help Amirfaham explain the project accurately after submission—not to memorize claims that the artifacts do not support.
 
 ## 60-second project explanation
 
-> I extended nnU-Net v2’s 3D ResEnc M segmentation pipeline into a multi-task model for cropped pancreas CT volumes. A shared 3D encoder learns representations used by a segmentation decoder for background, pancreas, and lesion, and by a classification branch for three lesion subtypes. I preserved the provided train/validation split, used no external data or pretrained weights, tracked both tasks in W&B, and evaluated whole-pancreas Dice, lesion Dice, and macro-F1. The main engineering challenges were correcting near-integer mask labels safely, fitting a 3D network into limited GPU memory, balancing two task losses, and avoiding validation leakage. The measured results were `PENDING`; the most important failure mode was `PENDING`.
+> I extended nnU-Net v2’s 3D ResEnc M segmentation pipeline into a multi-task model for cropped pancreas CT volumes. A shared 3D encoder learns representations used by a segmentation decoder for background, pancreas, and lesion, and by a classification branch for three lesion subtypes. I preserved the provided train/validation split, used no external data or pretrained weights, tracked both tasks in W&B, and evaluated whole-pancreas Dice, lesion Dice, and macro-F1. The selected frozen-backbone classification-rescue checkpoint scored 0.9202 whole-pancreas Dice and 0.6197 lesion Dice, meeting both segmentation targets, but macro-F1 was 0.4640 and missed the 0.60 target. The principal failure was subtype discrimination: subtype 2 recall was 0.25, including six subtype-2 cases predicted as subtype 1.
 
-Do not fill the final two fields from memory. Copy them from the frozen result artifacts and `report/report.md`.
+These values come from the frozen 36-case full-volume evaluation and `report/report.md`; use the exact defense-sheet values below when precision matters.
 
 ## System map
 
@@ -153,21 +153,27 @@ Use the final facts from [AI_WORKFLOW.md](AI_WORKFLOW.md). A truthful concise an
 
 ## Results defense sheet
 
-Fill only after final evaluation.
+Frozen from the selected-candidate artifacts and final report.
 
 | Question | Evidence-backed answer |
 |---|---|
-| Which checkpoint was selected, and why? | `PENDING` |
-| Whole-pancreas Dice? | `PENDING` |
-| Lesion Dice? | `PENDING` |
-| Macro-F1? | `PENDING` |
-| Per-subtype precision/recall/F1? | `PENDING` |
-| Strongest classification confusion? | `PENDING` |
-| Best qualitative case? | `PENDING` |
-| Most informative failure? | `PENDING` |
-| Peak training VRAM and runtime? | `PENDING` |
-| Test inference runtime? | `PENDING` |
-| Largest limitation? | `PENDING` |
+| Which checkpoint was selected, and why? | `checkpoint_classification_rescue.pth` (joint epoch 200 plus 30 frozen-backbone head-only epochs). Its equal-weight mean of whole Dice, lesion Dice, and macro-F1 was `0.6679416738`, the highest of four candidates. Relative to `checkpoint_final.pth`, it raised macro-F1 from `0.1333333333` to `0.4639934052` while segmentation stayed numerically identical because the encoder and decoder were frozen. |
+| Whole-pancreas Dice? | Mean `0.9201588643`, sample SD `0.0357843891`, 95% bootstrap CI `[0.9078962203, 0.9308140254]`; the `>=0.90` target was met. |
+| Lesion Dice? | Mean `0.6196727520`, sample SD `0.3206719418`, 95% bootstrap CI `[0.5148320706, 0.7165657179]`; the `>=0.27` target was met. |
+| Macro-F1? | `0.4639934052`, 95% bootstrap CI `[0.2795513293, 0.6314441497]`; the point estimate missed the `>=0.60` target. Accuracy was `0.5000`. |
+| Per-subtype precision/recall/F1? | Subtype 0 (support 9): `0.4444/0.4444/0.4444`; subtype 1 (support 15): `0.5000/0.7333/0.5946`; subtype 2 (support 12): `0.6000/0.2500/0.3529`. |
+| Strongest classification confusion? | With rows as references and columns as predictions, the matrix was `[[4,5,0],[2,11,2],[3,6,3]]`. The largest directional error was subtype 2 -> 1 (six cases), followed by subtype 0 -> 1 (five); subtype 1 was overpredicted 22 times for 15 references. |
+| Best qualitative case? | The two rule-selected strong cases were `quiz_1_164` (whole `0.9043`, lesion `0.9245`, subtype `1 -> 1`) and `quiz_0_184` (whole `0.9405`, lesion `0.9232`, subtype `0 -> 1`). The latter shows that excellent masks do not guarantee correct subtype classification. |
+| Most informative failure? | Both rule-selected weak cases had zero lesion overlap: `quiz_2_191` (whole `0.7935`, subtype `2 -> 0`) had a spatially remote 20,223-voxel prediction versus a 4,248-voxel reference; `quiz_1_227` (whole `0.9347`, subtype `1 -> 0`) predicted 287 lesion voxels versus 1,724 reference voxels. |
+| Peak training VRAM and runtime? | No instrumented production-training peak was recorded. The planned-patch CUDA preflight measured `6,159 MiB` allocated and `6,716 MiB` reserved; a production `nvidia-smi` sample was about `6,849 MiB` steady usage, not a peak. The 200 joint epochs took `6:48:03.248` wall time (`6:32:30.457` summed epoch compute); the 30-epoch rescue added 3,750 updates and `1,754.212 s` summed epoch compute. |
+| Test inference runtime? | The matched 36-case validation run took `112.306 s` (`3.1196 s/case`) with peak CUDA allocation/reservation `2,173.889/2,492 MiB`. Fresh inference over all 72 test cases took `248.115 s` total, or `3.4460 s/case`, with `2,173.272/2,492 MiB` peak allocation/reservation. |
+| Largest limitation? | The evidence comes from one fixed validation split of only 36 cases (nine subtype-0 cases), with no repeated seeds or cross-validation, so optimization variance and split sensitivity are not quantified. There is also no external validation. |
+
+Canonical sources are `fixed_validation/checkpoint_selection.json`, the selected
+checkpoint's `metrics.json`, `case_metrics.csv`, and `runtime.json`,
+`selected_test/runtime.json`, `final_evidence_summary.json`, and
+`report/report.md`. The qualitative cases were selected by the frozen lesion-Dice
+rule, not by visual appeal.
 
 ## Code walk-through checklist
 
