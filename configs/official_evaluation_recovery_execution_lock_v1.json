@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "status": "frozen_after_recovery_implementation_before_any_official_reference_access",
+  "locked_at_utc": "2026-08-06T17:34:41.7900492Z",
+  "scope": "single_zero_inference_saved_output_official_evaluation_recovery",
+  "recovery_implementation_commit": "f2245274567131d07e7680297dea1cafeefead16",
+  "recovery_protocol_sha256": "a2e5ff8bffcf5a07ba797cabe1d245b00e4a352c06f9ffd4b8246c43d5646fdd",
+  "recovery_wrapper_sha256": "a1bb3b383a6099375cb79453942b7750b44b91e28162b0c00725c3e59bde2974",
+  "recovery_tests_sha256": "78f2c1f496a2602de605824a830aba38e1f6dbaccaa4df77ff85981d6ae45415",
+  "final_candidate_lock_sha256": "8f508615ee0e6a0296506dbbc06f66e31dd46842cd585ef67f7c133c74c037db",
+  "original_common_sha256": "3dc9a80761fa4def5082ddbb4f1d75195716920b53af1bc4622f3aec623607bc",
+  "original_official_wrapper_sha256": "7b7ea9f937be9b54a1a7e81d0c7727d009159698d62bfc97f01538d1fbd0e79e",
+  "evaluator_sha256": "0c1812137419efe5fe00a9eceb9566b06bdc22a7b49bd8061f38270393637244",
+  "metrics_source_path": "C:\\Users\\amirf\\OneDrive\\Desktop\\ML-Quiz-3DMedImg\\src\\pancreas_multitask\\metrics.py",
+  "metrics_source_sha256": "b357df75a8502972139dc45d78ea8c05683ff7d46cb3bb00f2fdc2b73118d5a9",
+  "python_executable_path": "D:\\MLQuizWork\\.venv\\Scripts\\python.exe",
+  "python_executable_sha256": "205e1758ef9d2df113567b3ffa27c843b2b680af06bc3260443b5be1d72db37f",
+  "validation_images_path": "D:\\MLQuizWork\\nnUNet_raw\\Dataset501_PancreasMultitask\\imagesVal",
+  "reference_masks_path": "D:\\MLQuizWork\\nnUNet_raw\\Dataset501_PancreasMultitask\\labelsVal",
+  "reference_subtypes_path": "D:\\MLQuizWork\\nnUNet_raw\\Dataset501_PancreasMultitask\\classification_manifest.json",
+  "output_root": "D:\\MLQuizWork\\phd_upgrade_v5\\official_validation_locked_v5",
+  "immutable_pre_recovery_evidence": {
+    "original_ledger_sha256": "8d2de9121285f6b38aae6a608cd4b02292de3ba44ac550ca39e36e2de922bb23",
+    "candidate_preflight_sha256": "23060da5788b082bb88d69e444f72e34f0cc800c4cc1cab1097e2722a700fdf1",
+    "runtime_sha256": "8432bd46e4cdb373977f8891c9b04dba5ffaa080189da95402fa4cf875423bc3",
+    "classification_csv_sha256": "99d6dc3f1a08eb6fa7ad5b2fa1600cfa01746c75e2695dff2b42239848f17d45",
+    "probability_csv_sha256": "67396a95279b6575aaf6bb3ed37259cab1fb7292862ed4f1e410bb8ce4d3b02c",
+    "validated_inference_artifact_count": 39,
+    "validated_inference_artifact_set_sha256": "fec59a6b546d9158e6a32eb6be1d4f889b296a184b877dfc0e5baa323e180b28",
+    "full_existing_output_file_count": 40,
+    "full_existing_output_snapshot_sha256": "e39e6abcc774a62adaa5ea1501416bba8cdb24ce5c569864b5cc20fc30ce3087",
+    "mask_count": 36
+  },
+  "execution_contract": {
+    "recovery_inference_invocation_count": 0,
+    "total_official_inference_invocation_count": 1,
+    "official_evaluator_invocation_count": 1,
+    "test_data_access_permitted": false
+  },
+  "claim_boundary": {
+    "predictions_and_subtypes_are_hash_frozen_before_reference_access": true,
+    "case_identifiers_are_not_model_inputs": true,
+    "human_blinded_to_label_like_case_identifiers_claim_allowed": false,
+    "no_second_recovery_or_evaluation_permitted": true
+  }
+}
