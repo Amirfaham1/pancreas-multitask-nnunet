@@ -16,6 +16,7 @@ This log separates measured evidence from plans. `PENDING` means the artifact do
 | D-008 | Record W&B offline, then sync. | Avoids an authentication/network failure stopping the overnight run. |
 | D-009 | Compare final, native segmentation-best, and multitask-best checkpoints on all 36 cases. | Online subtype validation samples random patches and incomplete case coverage; it is unsuitable as sole final-selection evidence. |
 | D-010 | Do not attempt a TPU port. | nnU-Net's tested path is PyTorch/CUDA; a deadline-night PyTorch/XLA port would add compatibility risk without strengthening the required core submission. |
+| D-011 | Prepare one train-metric-triggered frozen-head rescue from `checkpoint_final.pth`. | After observing collapsed online patch classification, but before any full-volume validation evaluation, freeze a single 30 x 125 AdamW schedule. Activation uses only the predeclared epoch-40/50 training CE/accuracy rule; validation cannot activate or alter it. |
 
 ## 2026-08-05 — Source audit and conversion
 
@@ -64,7 +65,7 @@ Status: **DONE**
 Status: **DONE**
 
 - Historical pre-launch gate: **46 passed** in the provisioned environment.
-- Current expanded repository suite: **83 passed**.
+- Current expanded repository suite: **92 passed**.
 - The delivery packager is parser-tested and uses a validate-first atomic ZIP
   replacement; an existing valid archive remains untouched if staged ZIP
   validation fails.
@@ -142,13 +143,25 @@ Early stability evidence:
 
 These are random-patch monitoring values, not final case-level validation metrics.
 
+The classification path was confirmed to be registered in the optimizer and
+to receive nonzero updates; this was not a frozen-parameter bug. Through epoch
+30, its latest ten training epochs had mean classification CE `1.1303`, mean
+patch accuracy `0.3140`, and CE slope `-0.000682` per epoch, while online patch
+predictions remained single-class collapsed. Online validation diagnostics had
+already been observed, so the contingency is described precisely as frozen
+before full-volume validation evaluation, not before all validation
+observation. `configs/experiment.yaml` and
+`docs/classification_head_rescue.md` predeclare a train-only epoch-40/50 gate,
+fixed `checkpoint_final.pth` source, one 30 x 125 AdamW attempt, frozen
+encoder/decoder, and no validation batches, stopping, or schedule changes.
+
 ## 2026-08-06 — Fixed validation
 
 Status: **PENDING training completion**
 
 Required evidence:
 
-- evaluate `checkpoint_final.pth`, `checkpoint_best.pth`, and `checkpoint_best_multitask.pth` with identical full-volume settings;
+- evaluate `checkpoint_final.pth`, `checkpoint_best.pth`, and `checkpoint_best_multitask.pth` with identical full-volume settings, plus the predeclared classification rescue only if its train-only gate activates;
 - save restored masks and subtype probabilities for every validation case;
 - calculate mean/std/bootstrap confidence intervals for whole-pancreas and lesion Dice;
 - calculate fixed-class macro-F1, per-class precision/recall/F1, accuracy, and confusion matrix;

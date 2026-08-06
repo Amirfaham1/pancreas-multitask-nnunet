@@ -48,3 +48,41 @@ evaluation:
   lesion_definition: prediction_eq_2
   classification_primary_metric: macro_f1
   empty_empty_dice: 1.0
+
+# Predeclared post-training contingency. This does not alter the joint run.
+classification_rescue:
+  status: prepared_not_launched
+  activation:
+    evidence_scope: training_metrics_only
+    epoch_40_last_10_mean_classification_ce_at_least: 1.05
+    epoch_40_last_10_mean_patch_accuracy_at_most: 0.42
+    epoch_40_classification_ce_ols_slope_at_least: -0.001
+    epoch_40_rule: all_three_conditions_required
+    borderline_reaudit_epoch: 50
+    epoch_50_classification_ce_above: 1.03
+    epoch_50_patch_accuracy_below: 0.45
+    epoch_50_rule: either_condition_sufficient
+    maximum_attempts: 1
+  source: checkpoint_final.pth
+  activation_audit: classification_rescue_activation.json
+  require_affirmative_hash_bound_audit: true
+  reset_modules:
+    - classification_pool
+    - classification_head
+  frozen_modules:
+    - encoder
+    - decoder
+  decoder_forward: false
+  training_split_only: true
+  validation_batches_during_optimization: 0
+  epochs: 30
+  iterations_per_epoch: 125
+  optimizer: AdamW
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  gradient_clip_norm: 1.0
+  label_smoothing: 0.05
+  nonlesion_patch_weight: 0.25
+  reset_seed: 20260806
+  early_stopping: false
+  wandb: disabled

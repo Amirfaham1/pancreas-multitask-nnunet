@@ -37,15 +37,18 @@ configs/experiment.yaml            Frozen experiment choices
 src/pancreas_multitask/network.py  ResEnc-M wrapper and classification head
 src/pancreas_multitask/trainer.py  Joint loss, metrics, checkpoints, W&B logging
 src/pancreas_multitask/predictor.py Explicit joint sliding-window inference
+src/pancreas_multitask/classification_rescue.py Frozen-head rescue safeguards
 scripts/prepare_dataset.py         Audit and non-destructive nnU-Net conversion
 scripts/predict_joint.py           Raw-NIfTI segmentation/classification CLI
 scripts/evaluate_predictions.py    Fixed validation metrics and bootstrap CIs
+scripts/audit_classification_rescue_activation.py Train-only rescue gate
 scripts/validate_submission.py     Strict 72-case directory/ZIP validator
 scripts/Package-Submission.ps1     Validate-first atomic delivery packager
 scripts/benchmark_training.py      Short CUDA timing/memory probe
 tests/                             Data, network, trainer, metric, inference tests
 report/report.md                   Artifact-driven technical-report source
 docs/AI_WORKFLOW.md                AI attribution and verification workflow
+docs/classification_head_rescue.md Predeclared conditional rescue protocol
 docs/INTERVIEW_PREP.md             Post-submission technical review notes
 ```
 
@@ -135,7 +138,7 @@ D:\MLQuizWork\.venv\Scripts\python.exe -m pytest -q
 ```
 
 The historical pre-launch gate had **46 passing tests**; the current expanded
-suite has **83 passing tests**. The exact CLI smoke and guarded benchmark were:
+suite has **92 passing tests**. The exact CLI smoke and guarded benchmark were:
 
 ```powershell
 # Run after the process-scoped environment setup above.
@@ -191,7 +194,14 @@ This checkpoint-enabled offline-W&B run was launched on 2026-08-05 at 19:25
 America/Toronto and is still in progress. Its training-dependent metrics are
 not reported as final results.
 
-Online patch metrics are monitoring signals, not the final reported scores. `checkpoint_final.pth`, the native segmentation `checkpoint_best.pth`, and `checkpoint_best_multitask.pth` are compared on the complete fixed validation set before test inference.
+Online patch metrics are monitoring signals, not the final reported scores.
+Because the original high-momentum classification head showed a train-metric
+collapse, a [fixed train-only rescue protocol](docs/classification_head_rescue.md)
+was committed before any full-volume validation evaluation. If its epoch-40/50
+training gate activates, it reinitializes and tunes only the classification
+path from `checkpoint_final.pth`; validation cannot activate, stop, or alter it.
+The three original checkpoints, plus the rescue only when activated, are then
+compared once on the complete fixed validation set before test inference.
 
 Model checkpoints are not committed because they are large and can embed local
 provenance. The evaluated checkpoint hash and exact reproduction configuration

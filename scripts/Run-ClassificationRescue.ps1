@@ -1,0 +1,131 @@
+[CmdletBinding()]
+param(
+    [string]$WorkRoot = "D:\MLQuizWork",
+    [string]$OutputCheckpoint = "",
+    [switch]$Resume
+)
+
+$ErrorActionPreference = "Stop"
+
+$repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$setupScript = Join-Path $PSScriptRoot "Set-QuizEnvironment.ps1"
+$python = Join-Path $WorkRoot ".venv\Scripts\python.exe"
+$foldDirectory = Join-Path $WorkRoot (
+    "nnUNet_results\Dataset501_PancreasMultitask\" +
+    "nnUNetTrainerPancreasMultiTask__nnUNetResEncUNetMPlans__3d_fullres\fold_0"
+)
+$resolvedFoldDirectory = [System.IO.Path]::GetFullPath($foldDirectory)
+$resolvedSource = [System.IO.Path]::GetFullPath(
+    (Join-Path $resolvedFoldDirectory "checkpoint_final.pth")
+)
+$activationAudit = Join-Path $resolvedFoldDirectory (
+    "classification_rescue_activation.json"
+)
+if ([string]::IsNullOrWhiteSpace($OutputCheckpoint)) {
+    $OutputCheckpoint = Join-Path $resolvedFoldDirectory (
+        "checkpoint_classification_rescue.pth"
+    )
+}
+$resolvedOutput = [System.IO.Path]::GetFullPath($OutputCheckpoint)
+$auditPath = "$resolvedOutput.audit.json"
+
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+    throw "Python executable not found: $python"
+}
+if (-not (Test-Path -LiteralPath $resolvedSource -PathType Leaf)) {
+    throw "Source checkpoint not found: $resolvedSource"
+}
+if (-not (Test-Path -LiteralPath $activationAudit -PathType Leaf)) {
+    throw "Affirmative train-only activation audit is missing: $activationAudit"
+}
+if ([System.IO.Path]::GetDirectoryName($resolvedSource) -ne $resolvedFoldDirectory) {
+    throw "Source checkpoint must be a direct child of the production fold directory."
+}
+if ([System.IO.Path]::GetDirectoryName($resolvedOutput) -ne $resolvedFoldDirectory) {
+    throw "Output checkpoint must be a direct child of the production fold directory."
+}
+if ($resolvedSource -eq $resolvedOutput) {
+    throw "Source and output checkpoints must differ."
+}
+
+$activeTraining = Get-CimInstance Win32_Process | Where-Object {
+    $_.CommandLine -and
+    $_.CommandLine.Contains("nnUNetv2_train") -and
+    $_.CommandLine.Contains("nnUNetTrainerPancreasMultiTask") -and
+    $_.CommandLine -match "(?:^|\s)501(?:\s|$)"
+}
+if ($activeTraining) {
+    $processIds = ($activeTraining.ProcessId | Sort-Object -Unique) -join ", "
+    throw "Production training is still active (PID(s): $processIds)."
+}
+
+$activeRescue = Get-CimInstance Win32_Process | Where-Object {
+    $_.CommandLine -and $_.CommandLine.Contains("train_classification_rescue.py")
+}
+if ($activeRescue) {
+    $processIds = ($activeRescue.ProcessId | Sort-Object -Unique) -join ", "
+    throw "A classification rescue is already active (PID(s): $processIds)."
+}
+
+# The Python lock is removed normally in a finally block. A hard power/process
+# loss can leave it behind; after proving that no rescue process exists, remove
+# only this exact direct-child lock so a checkpointed run can resume.
+$lockPath = "$resolvedOutput.lock"
+if (Test-Path -LiteralPath $lockPath -PathType Leaf) {
+    Remove-Item -LiteralPath $lockPath -Force
+    Write-Warning "Removed stale classification-rescue lock: $lockPath"
+}
+
+if ($Resume -and -not (Test-Path -LiteralPath $resolvedOutput -PathType Leaf)) {
+    throw "Resume requested but output checkpoint is missing: $resolvedOutput"
+}
+if (-not $Resume -and (Test-Path -LiteralPath $resolvedOutput)) {
+    throw "Output checkpoint already exists; use -Resume only to continue it."
+}
+
+Set-ExecutionPolicy -Scope Process Bypass -Force
+. $setupScript `
+    -WorkRoot $WorkRoot `
+    -WandbMode disabled `
+    -DataAugmentationProcesses 0 | Out-Null
+
+$arguments = @(
+    (Join-Path $PSScriptRoot "train_classification_rescue.py"),
+    "--source-checkpoint", $resolvedSource,
+    "--output-checkpoint", $resolvedOutput,
+    "--activation-audit", $activationAudit,
+    "--audit-json", $auditPath,
+    "--dataset", "501",
+    "--configuration", "3d_fullres",
+    "--fold", "0",
+    "--trainer", "nnUNetTrainerPancreasMultiTask",
+    "--plans", "nnUNetResEncUNetMPlans",
+    "--device", "cuda",
+    "--epochs", "30",
+    "--iterations-per-epoch", "125",
+    "--learning-rate", "0.0003",
+    "--weight-decay", "0.0001",
+    "--gradient-clip-norm", "1.0",
+    "--label-smoothing", "0.05",
+    "--nonlesion-patch-weight", "0.25",
+    "--reset-seed", "20260806",
+    "--expected-training-cases", "252",
+    "--expected-validation-cases", "36",
+    "--save-every", "1"
+)
+if ($Resume) {
+    $arguments += "--resume"
+}
+
+Set-Location -LiteralPath $repoRoot
+& $python @arguments
+if ($LASTEXITCODE -ne 0) {
+    throw "Classification rescue exited with code $LASTEXITCODE"
+}
+
+[pscustomobject]@{
+    SourceCheckpoint = $resolvedSource
+    RescueCheckpoint = $resolvedOutput
+    Audit = $auditPath
+    Resumed = [bool]$Resume
+}

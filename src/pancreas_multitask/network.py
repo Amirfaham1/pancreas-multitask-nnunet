@@ -58,6 +58,22 @@ class HybridCrossAttentionPool3D(nn.Module):
         self.output_norm = nn.LayerNorm(channels)
         nn.init.trunc_normal_(self.query, std=0.02)
 
+    def reset_parameters(self) -> None:
+        """Reinitialize only the learned pooling path.
+
+        This is intentionally explicit instead of walking all child modules:
+        ``MultiheadAttention`` owns parameters both directly and through its
+        output projection.  Resetting each owner makes a post-training
+        classification-head rescue reproducible without touching the shared
+        encoder or segmentation decoder.
+        """
+
+        self.token_norm.reset_parameters()
+        nn.init.trunc_normal_(self.query, std=0.02)
+        self.attention.out_proj.reset_parameters()
+        self.attention._reset_parameters()
+        self.output_norm.reset_parameters()
+
     @property
     def output_channels(self) -> int:
         return self.channels * 2
@@ -147,23 +163,57 @@ class MultiTaskResEncUNet(nn.Module):
                 if module.bias is not None:
                     nn.init.zeros_(module.bias)
 
+    def reset_classification_parameters(self) -> None:
+        """Reset the pooling and classification head, but no backbone state."""
+
+        self.classification_pool.reset_parameters()
+        for module in self.classification_head.modules():
+            reset_parameters = getattr(module, "reset_parameters", None)
+            if callable(reset_parameters):
+                reset_parameters()
+        # Keep the declared small truncated-normal initialization for both
+        # Linear layers after their generic ``reset_parameters`` calls.
+        self._initialize_classification_head()
+
+    def _encode(self, x: Tensor) -> Sequence[Tensor]:
+        skips = self.encoder(x)
+        if not isinstance(skips, (list, tuple)) or len(skips) == 0:
+            raise RuntimeError(
+                "The residual encoder must return a non-empty sequence of skips"
+            )
+        return skips
+
+    def classify_bottleneck(self, bottleneck: Tensor) -> Tensor:
+        """Classify a previously computed encoder bottleneck."""
+
+        return self.classification_head(self.classification_pool(bottleneck))
+
+    def encode_bottleneck(self, x: Tensor) -> Tensor:
+        """Encode an input and return only its lowest-resolution feature map."""
+
+        return self._encode(x)[-1]
+
+    def forward_classification(self, x: Tensor) -> Tensor:
+        """Return subtype logits without executing the segmentation decoder.
+
+        The method is used only by the optional frozen-backbone rescue.  Joint
+        training and inference retain the normal :meth:`forward` contract.
+        """
+
+        return self.classify_bottleneck(self.encode_bottleneck(x))
+
     def forward(
         self,
         x: Tensor,
         *,
         return_classification: bool = False,
     ) -> Tensor | list[Tensor] | tuple[Tensor | list[Tensor], Tensor]:
-        skips = self.encoder(x)
-        if not isinstance(skips, (list, tuple)) or len(skips) == 0:
-            raise RuntimeError(
-                "The residual encoder must return a non-empty sequence of skips"
-            )
+        skips = self._encode(x)
         segmentation = self.decoder(skips)
         if not return_classification:
             return segmentation
 
-        pooled = self.classification_pool(skips[-1])
-        classification = self.classification_head(pooled)
+        classification = self.classify_bottleneck(skips[-1])
         return segmentation, classification
 
     def compute_conv_feature_map_size(self, input_size: Sequence[int]) -> int:
