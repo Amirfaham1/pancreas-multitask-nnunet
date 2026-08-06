@@ -16,9 +16,9 @@ header-includes:
     \usepackage{xurl}
     \newcommand{\artifacthash}[1]{\nolinkurl{#1}}
 abstract: |
-  This work develops a joint system for pancreas/lesion segmentation and three-class subtype classification from cropped three-dimensional computed-tomography (CT) regions of interest. The mandatory nnU-Net v2 3D Residual Encoder Medium (ResEnc M) network is retained as the segmentation backbone. Its encoder is shared with a classification branch that combines global average pooling with learned-query cross-attention over the deepest feature map. A deterministic preparation pipeline preserves the supplied 252/36 training/validation split and repairs a source-label representation defect without modifying the original files: 18,620,040 nominal pancreas voxels in 214 of 288 labelled masks were decoded as `1.0000152587890625` and were safely mapped to integer label `1`. Planning statistics were computed from the 252 training cases only.
+  This work develops a joint system for pancreas/lesion segmentation and three-class subtype classification from cropped three-dimensional computed-tomography (CT) regions of interest. The mandatory nnU-Net v2 3D Residual Encoder Medium (ResEnc M) network is retained as the segmentation backbone. Its encoder is shared with a classification branch, and a post-baseline experiment adds a frozen-encoder, lesion-aware neural case head. A deterministic preparation pipeline preserves the supplied 252/36 training/validation split and repairs a source-label representation defect without modifying the original files: 18,620,040 nominal pancreas voxels in 214 of 288 labelled masks were decoded as `1.0000152587890625` and were safely mapped to integer label `1`. Planning statistics were computed from the 252 training cases only.
 
-  Joint optimization uses nnU-Net's deeply supervised Dice-plus-cross-entropy segmentation objective and a class-weighted, label-smoothed cross-entropy classification objective. The classification term is downweighted for patches without visible lesion, and foreground oversampling is increased to 50%. A separate evaluator reports unweighted case-level whole-pancreas Dice, lesion Dice, macro-F1, per-class metrics, distributions, and case-bootstrap uncertainty in accordance with the task-oriented principles of Metrics Reloaded. On the fixed 36-case validation set, mean whole-pancreas Dice was 0.9202, mean lesion Dice was 0.6197, and macro-F1 was 0.4640. Both undergraduate segmentation targets were met; the 0.60 classification target was not. The project uses substantial OpenAI Codex assistance as requested in the brief, with explicit attribution, candidate review, and artifact-based verification.
+  The original joint run used deeply supervised Dice-plus-cross-entropy segmentation and class-weighted, label-smoothed classification. Its already-observed 36-case validation results were whole-pancreas Dice 0.9202, lesion Dice 0.6197, and macro-F1 0.4640. After that baseline and its 72-case test package existed, the post-baseline extension was locked before eligible v5 extraction/training and compared exactly two assignment-conforming neural case heads using three repeats of five-fold out-of-fold (OOF) evaluation. Two-query cross-attention MIL was selected over lesion-aware mean MIL (mean OOF macro-F1 0.5080 versus 0.4197), but its all-training-case refit reached 0.9787 resubstitution macro-F1. The 0.4707 gap is strong evidence of overfitting, and the OOF comparison is not an unbiased end-to-end estimate because the common frozen encoder and rescue head had already seen all 252 training labels. Class-specific log-score offsets were rejected after cross-fitted train-only evaluation reduced mean macro-F1. The one locked post-hoc reevaluation produced whole-pancreas Dice 0.9202, lesion Dice 0.6197, and macro-F1 0.5254. This strictly improved the frozen baseline classifier and selected v5 under the predeclared replacement rule, but missed both the undergraduate 0.60 and higher-tier 0.70 classification bars. In the strict 72-case ABBA speed audit, the candidate took 281.2425 seconds versus 236.7340 seconds for installed stock nnU-Net: a $-18.8011\%$ runtime reduction, meaning the candidate was 18.8011% slower, although masks and checked output contracts were numerically equivalent. The project uses substantial OpenAI Codex assistance as requested in the brief, with explicit attribution, candidate review, and artifact-based verification.
 keywords:
   - "pancreas CT"
   - "medical image segmentation"
@@ -29,17 +29,17 @@ keywords:
 
 **Public repository:** [github.com/Amirfaham1/pancreas-multitask-nnunet](https://github.com/Amirfaham1/pancreas-multitask-nnunet)
 
-**Weights & Biases run:** [public run `hrs05iyx`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx)
+**Weights & Biases runs:** [joint baseline `hrs05iyx`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx) and [v5 train-only head experiment `u03yz7ds`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/u03yz7ds)
 
-**Evaluated implementation commit:** \artifacthash{41ab3abc6227e6eb070958a22e61eb76dd5d2254}
+**Evaluated implementation commit:** \artifacthash{39b2a60da54e43ffdda648562fc296a8c9910cd9}
 
 # Introduction
 
 Pancreatic CT analysis in this take-home combines two prediction problems at different spatial scales. Semantic segmentation assigns background, normal-pancreas, or lesion status to every voxel. Subtype classification assigns one of three labels to the complete cropped CT case. A useful model must therefore learn both fine spatial boundaries and a global representation that separates disease subtypes. The supplied images also vary in voxel spacing and appearance, making data-adaptive preprocessing and augmentation important.
 
-The brief mandates nnU-Net v2's 3D ResEnc M configuration, a shared encoder, separate segmentation and classification outputs, W&B tracking for both tasks, explicit classification-imbalance and overfitting strategies, Metrics Reloaded-aligned evaluation, public code, an AI-workflow description, and predictions for 72 test cases. External datasets, pretrained weights, and optimization on the supplied validation images are prohibited. The required undergraduate validation targets are whole-pancreas Dice at least 0.90, lesion Dice at least 0.27, and three-class macro-F1 at least 0.60. The more demanding inference-speed experiment is required only for master/PhD candidates.
+The brief mandates nnU-Net v2's 3D ResEnc M configuration, a shared encoder, separate segmentation and classification outputs, W&B tracking for both tasks, explicit classification-imbalance and overfitting strategies, Metrics Reloaded-aligned evaluation, public code, an AI-workflow description, and predictions for 72 test cases. External datasets and pretrained weights are prohibited. The supplied validation split may support monitoring and debugging, but its cases may not be added to training or contribute gradients. The required undergraduate validation targets are whole-pancreas Dice at least 0.90, lesion Dice at least 0.27, and three-class macro-F1 at least 0.60. The master/PhD thresholds are 0.91, 0.31, and 0.70, together with at least 10% faster inference by a method other than disabling test-time augmentation (TTA) or increasing the sliding-window step.
 
-This submission is evaluated against the undergraduate targets; architecture, leakage-control, reproducibility, and reporting requirements are otherwise unchanged. Under the deadline, the priority order was: (i) correct data and split handling, (ii) a genuine ResEnc M multi-task implementation, (iii) defensible validation and complete test artifacts, and only then (iv) optional speed work.
+The candidate is an undergraduate, but the technical workflow does not change category: the same model, split, leakage, reproducibility, and reporting contracts apply. The initial deadline-safe artifact set was evaluated against the undergraduate targets and retained immutably. After the deadline was extended, a separately locked upgrade attempted the more demanding thresholds. This chronology matters: the original validation result and baseline test package already existed before v5, so the later official pass is a locked post-hoc reevaluation, not a first-look holdout.
 
 The main technical contributions are:
 
@@ -47,8 +47,9 @@ The main technical contributions are:
 2. a ResEnc M extension with a shared residual encoder, standard nnU-Net decoder, and hybrid global-average/learned-query cross-attention classification branch;
 3. an imbalance-aware joint objective and patch-evidence weighting strategy compatible with nnU-Net's patch training;
 4. explicit joint sliding-window inference that aggregates segmentation logits and subtype probabilities across mirror views, tiles, and folds without hidden mutable state;
-5. an evaluator and submission validator independent of the training metrics; and
-6. an auditable AI-assisted workflow that distinguishes candidate ownership from AI-generated implementation.
+5. a prospectively bounded, best-of-two neural case-head comparison using production-matched frozen features, repeated train-only OOF predictions, and a locked replacement gate;
+6. a separate evaluator, deterministic inference-conformance checks, and a strict submission validator; and
+7. an auditable AI-assisted workflow that distinguishes candidate ownership from AI-generated implementation.
 
 # Data, integrity, and split control
 
@@ -66,7 +67,7 @@ The assessment package does not provide scanner models, acquisition protocols, c
 
 : Supplied case counts and subtype composition. {#tbl:split}
 
-Subtype 1 forms 42.1% of the training set, subtype 2 forms 33.3%, and subtype 0 forms 24.6%. This imbalance is moderate rather than extreme, but an accuracy-only objective could still favor subtype 1. Classification is therefore trained with inverse-frequency class weights and evaluated with macro-F1 and per-class recall/precision.
+Subtype 1 forms 42.1% of the training set, subtype 2 forms 33.3%, and subtype 0 forms 24.6%. This imbalance is moderate rather than extreme, but an accuracy-only objective could still favor subtype 1. The original joint classifier used inverse-frequency class weights. The v5 head experiment instead used deterministic class-balanced sampling with replacement and unweighted cross-entropy, deliberately avoiding double correction. Both are evaluated with macro-F1 and per-class recall/precision.
 
 All 36 validation references contain both whole-pancreas and lesion foreground. Lesion sizes in the original validation grid range from 673 to 137,595 voxels (median 7,552.5), illustrating why a mean lesion Dice can conceal substantially different small- and large-target behavior.
 
@@ -268,9 +269,9 @@ The final W&B record contains:
 
 The ten series used in Figures 2 and 3 match the canonical W&B history sample-for-sample and bit-for-bit. They are deterministic checkpoint-backed renderings, not dashboard screenshots. The separate head-only rescue is retained in immutable audit JSON and is not relabelled as epochs 200--229 in the joint W&B history.
 
-![Joint-run task-specific optimization traces over 200 epochs. Training and validation-patch segmentation and classification objectives are shown separately; negative segmentation values reflect nnU-Net's negative soft-Dice term. This deterministic checkpoint-backed rendering was independently cross-checked sample-for-sample against canonical W&B history. These are optimization traces, not restored full-volume results.](figures/loss_curves.png){#fig:loss-curves width=100%}
+![Joint-run task-specific optimization traces over 200 epochs. Training and validation-patch segmentation and classification objectives are shown separately; negative segmentation values reflect nnU-Net's negative soft-Dice term. This deterministic checkpoint-backed rendering was separately cross-checked sample-for-sample against canonical W&B history. These are optimization traces, not restored full-volume results.](figures/loss_curves.png){#fig:loss-curves width=100%}
 
-![Online joint-run monitoring over 200 epochs. The left panel shows whole-pancreas, label-1, lesion, and mean-foreground patch Dice; the right panel shows patch-aggregated subtype macro-F1 and accuracy. This deterministic checkpoint-backed rendering was independently cross-checked against canonical W&B history. It does not show the later head-only rescue or final full-volume validation.](figures/validation_curves.png){#fig:validation-curves width=100%}
+![Online joint-run monitoring over 200 epochs. The left panel shows whole-pancreas, label-1, lesion, and mean-foreground patch Dice; the right panel shows patch-aggregated subtype macro-F1 and accuracy. This deterministic checkpoint-backed rendering was separately cross-checked against canonical W&B history. It does not show the later head-only rescue or final full-volume validation.](figures/validation_curves.png){#fig:validation-curves width=100%}
 
 ## Predeclared conditional classification-head rescue
 
@@ -306,6 +307,28 @@ $$
 
 The candidate with the largest equal-weight score is selected; this prevents the much easier whole-organ task from being the only selection signal. The selected artifact is `checkpoint_classification_rescue.pth`, with SHA-256 \artifacthash{d7248e8903fd1f062687ae33a22ad0374ca1b9927445443dcde55dcde128d116}.
 
+## Post-baseline v5 neural case-head protocol
+
+The original 36-case validation metrics above had been observed and the baseline 72-case test package had already been generated when the submission window was extended. The v5 work is therefore a post-baseline extension motivated by a known classification weakness. Before any eligible v5 feature extraction or neural-head training, the allowed model family, two candidates, training schedule, OOF selection rule, class-offset rule, data boundary, and replacement gate were frozen in machine-readable locks. The neural-head lock has SHA-256 \artifacthash{a8c2147493718acc96e4aa5dc471bf3f3277f0b99e8a8f7620bf966ab7b70d11}; the decision lock has SHA-256 \artifacthash{e28a303c7d3da5dc7857ecc72787b6746d1e689e83167c500d4d2823c5ea540f}. The original rescue checkpoint, encoder, decoder, and rescue classification path remained frozen. A classical feature diagnostic was explicitly ineligible as the primary assignment candidate.
+
+V5 development scripts were restricted to the 252 supplied training cases with counts 62/106/84. They opened no official validation image, mask, label, or metric and no test data; they did not read combined train/validation metadata. This v5-specific boundary must not be generalized to the complete project history: the frozen source checkpoint had already been selected using the original official validation pass, and its shared encoder and rescue head had been trained using all 252 training labels. Consequently, the v5 head OOF results compare two new heads fairly under a common representation, but they are not unbiased end-to-end generalization estimates.
+
+## Production-matched frozen case representation
+
+The feature extractor used the production nnU-Net preprocessing, sliding-window tiling, Gaussian weighting, and eight mirror views. Tiles were ranked by the model's own predicted lesion probability, never by a reference mask, and at most the three highest-mass tiles were retained. Each retained tile contains a pooled $256\times4\times4\times6$ stage-3 encoder map plus aligned model-predicted lesion and whole-pancreas probability maps. A 646-value case summary concatenates the frozen rescue logits and probabilities with a uniform stage-5 mean and a predicted-lesion-mass-weighted stage-5 mean. Case IDs, filenames, paths, and enumeration order were excluded from the numeric model matrix.
+
+The complete extraction processed 252 cases, 641 logical tiles, and 5,128 mirror-view network forwards in 775.317 seconds (3.077 seconds/case) without an out-of-memory fallback. Peak CUDA allocation/reservation was 2,170.228/2,500 MiB. Every one of the 252 per-case caches was rehashed before training. The extraction audit SHA-256 is \artifacthash{db199b4bf00ae7b0c99dfbf8978fb423a31721315dff87c428944bb17059c77b}; the exact cache-manifest and feature-schema hashes are \artifacthash{4e8778af4ae525901519b1249865bea38c5f42466d9f636520610ed1ea6203e7} and \artifacthash{38430f0fbeb27385efac311ba87e175373a1384c41780545682402e6515037b0}.
+
+## Locked best-of-two neural-head comparison
+
+Both eligible heads share a $1\times1\times1$ projection from the 258 spatial channels to 64 channels and a 646-to-64 projection of the case summary. The 117,263-parameter lesion-aware mean-MIL control combines global, lesion-probability-weighted, and whole-pancreas-probability-weighted tile means. The 101,391-parameter attention candidate flattens at most 288 ranked spatial tokens and uses two learned 64-dimensional queries, four-head cross-attention, and a frozen rule that adds a predicted-lesion-mass prior to attention scores. It has no positional encoding and is therefore permutation-invariant with respect to token order apart from the content and lesion-mass prior; spatial relationships beyond the encoder features are not explicitly represented.
+
+Each candidate followed exactly 15 trajectories: five stratified folds for each of three repeat seeds. Every trajectory ran 150 epochs with case batch size 16, 256 sampled cases per epoch, AdamW at $3\times10^{-4}$, weight decay $10^{-4}$, cosine decay to zero, label smoothing 0.05, and gradient clipping at 1.0. Training used deterministic class-balanced sampling with replacement and unweighted cross-entropy. Balanced sampling holds in expectation across draws; individual minibatches are not forced to contain identical class counts. Focal loss was excluded to keep one prospectively fixed loss, and SMOTE was excluded because interpolating high-dimensional learned anatomical features would not create validated biological cases. The balanced sampler was not combined with class-weighted loss.
+
+Selection used the mean complete-OOF macro-F1 across the three repeats, with minimum repeat/class recall as the declared secondary criterion and a 0.01 tie band. There was no early stopping, head choice, schedule change, or stopping decision based on official validation. After selection, the winning architecture was initialized once and refit on all 252 training cases for exactly 150 epochs with the locked seed and schedule.
+
+Amirfaham Fallahpour specifically proposed class-specific thresholding and stronger imbalance handling. Because this is mutually exclusive three-class prediction rather than three separate binary labels, per-class 0.5 thresholds are not coherent. The proposal was implemented as a bounded grid of additive class log-score offsets, cross-fitted on the selected head's train-only OOF logits. Activation required at least 0.01 mean macro-F1 gain and no more than 0.02 loss in the minimum repeat/class recall. This is decision-boundary tuning; no probability-reliability, Brier-score, or log-loss result is claimed. The offset procedure was not nested around neural-head training, which further limits its interpretation.
+
 ## Explicit joint sliding-window inference
 
 The joint predictor is separate from nnU-Net's stock segmentation-only path. For each tile and enabled mirror orientation, it averages segmentation logits after spatially reversing mirrored outputs and averages three-class softmax probabilities. Across spatial tiles, segmentation logits use the standard Gaussian overlap weighting, while subtype probabilities receive an equal tile mean. Across folds, segmentation logits and subtype probabilities are again averaged separately. The final subtype is the probability argmax.
@@ -325,7 +348,7 @@ The final inference switches are:
 
 : Joint full-volume inference settings. {#tbl:inference}
 
-Probability averaging is an explicit ensemble rule, not mathematically equivalent to averaging logits. Equal tile weighting for classification is simple and reproducible, but it may give non-lesion or padded-context tiles too much influence. This is an implementation-specific limitation and a useful future ablation target.
+Probability averaging is an explicit ensemble rule, not mathematically equivalent to averaging logits. Equal tile weighting for the baseline rescue classifier may give non-lesion or padded-context tiles too much influence. The v5 path instead forms the locked lesion-ranked case bag during the same encoder traversal and applies the selected neural case head after the volume is complete. Its official validation metrics were computed from the hash-frozen saved predictions in the single locked post-hoc reevaluation; they were not inferred from train-only OOF or resubstitution results.
 
 # Evaluation aligned with Metrics Reloaded
 
@@ -373,11 +396,11 @@ All three classes remain in the macro average even if a model never predicts one
 
 The evaluator computes a 95% percentile case-bootstrap interval for macro-F1 and accuracy using the same 2,000 draws and seed. With only 36 cases and as few as nine cases in a subtype, this interval can be wide and discrete; it is descriptive uncertainty, not evidence of external generalization.
 
-## Independent evaluator and geometry checks
+## Implementation-separated evaluator and geometry checks
 
-Final numbers are produced by `scripts/evaluate_predictions.py`, which does not import PyTorch or the trainer's metric implementation. Before scoring it requires an exact case set, readable finite NIfTI arrays, exact integer labels in `{0,1,2}`, equal shapes, and affine/spacing agreement within $10^{-5}$. It writes both aggregate JSON and case-level CSV. This separation reduces the chance that a bug shared by training and evaluation silently validates itself.
+The historical baseline numbers and the locked v5 official metrics use `scripts/evaluate_predictions.py`, which does not import PyTorch or the trainer's metric implementation. Before scoring it requires an exact case set, readable finite NIfTI arrays, exact integer labels in `{0,1,2}`, equal shapes, and affine/spacing agreement within $10^{-5}$. It writes both aggregate JSON and case-level CSV. This implementation separation reduces the chance that a bug shared by training and evaluation silently validates itself.
 
-The report is populated from those saved files. The JSON records all conventions, bootstrap parameters, empty-case counts, and confusion-matrix axes. Logical paths are reported instead of machine-specific absolute paths:
+The historical baseline portion of the report is populated from the saved files below. The v5 result is populated only from its consumed immutable gate ledger: `official_evaluation_gates.json`, SHA-256 \artifacthash{6efb7d9cfb745ecffc06cd5c981ab360b980dfb5d2a49b18537d1aab236c3df7}, which binds `official_evaluation_metrics.json`, SHA-256 \artifacthash{bdc3e538266b5fff886e5fc7205d36f0ff66c3794b3d51143ce413326c967a6b}. The JSON records all conventions, bootstrap parameters, empty-case counts, and confusion-matrix axes. Logical paths are reported instead of machine-specific absolute paths:
 
 - `checkpoint_classification_rescue/metrics.json`, SHA-256 \artifacthash{51361a7da5e4ccb78b9dc3e3c010f4fcb5f65680d0554015c203f4bab5a94555};
 - `checkpoint_classification_rescue/case_metrics.csv`, SHA-256 \artifacthash{0669a652a57e7f1ec9c1f149d26ed05832fb0efbadef541eec9e3fc8a124f500};
@@ -391,13 +414,13 @@ The strict cross-artifact summary `final_evidence_summary.json` has SHA-256 \art
 
 Examples are selected by a reproducible rule after all 36 cases are scored, not by visually searching for attractive slices. The two “strong” cases are the highest lesion-Dice cases and the two “weak” cases are the lowest lesion-Dice cases; whole-pancreas Dice and case ID break ties deterministically. For each case and orientation, the slice with the greatest reference/prediction lesion-union area is shown; whole-organ union is the fallback if both lesion masks are empty. One combined panel uses a fixed CT window and contour legend. Row labels report whole-pancreas and lesion Dice, subtype reference/prediction, and reference lesion voxels.
 
-![Fixed-validation case-level Dice distributions for the selected checkpoint ($n=36$). Violins show the distributions, markers identify the mean and median, jittered points show every case, and dotted segments mark the undergraduate targets of 0.90 for whole pancreas and 0.27 for lesion.](figures/dice_distributions.png){#fig:dice-distributions width=86%}
+![Historical-baseline fixed-validation case-level Dice distributions for its selected checkpoint ($n=36$). Violins show the distributions, markers identify the mean and median, jittered points show every case, and dotted segments mark the undergraduate targets of 0.90 for whole pancreas and 0.27 for lesion.](figures/dice_distributions.png){#fig:dice-distributions width=86%}
 
-![Deterministically selected two weakest and two strongest lesion-Dice cases. Sagittal, coronal, and axial slices maximize the reference/prediction lesion-union area; CT is displayed at 40/400 HU. Solid contours are references and dashed contours are predictions. Cases were selected by the frozen metric rule, not by visual appeal.](figures/qualitative_cases.png){#fig:qualitative-cases width=100%}
+![Historical-baseline, deterministically selected two weakest and two strongest lesion-Dice cases. Sagittal, coronal, and axial slices maximize the reference/prediction lesion-union area; CT is displayed at 40/400 HU. Solid contours are references and dashed contours are predictions. Cases were selected by the frozen metric rule, not by visual appeal.](figures/qualitative_cases.png){#fig:qualitative-cases width=100%}
 
 # Results
 
-## Primary fixed-validation outcomes
+## Historical baseline fixed-validation outcomes
 
 | Metric ($n=36$) | Result | 95% CI | Target status |
 |---|---:|---:|---|
@@ -405,13 +428,13 @@ Examples are selected by a reproducible rule after all 36 cases are scored, not 
 | Lesion Dice | $0.6197\pm0.3207$ | [0.5148, 0.7166] | $\geq0.27$ / **met** |
 | Classification macro-F1 | 0.4640 | [0.2796, 0.6314] | $\geq0.60$ / **not met** |
 
-: Primary fixed-validation results and undergraduate targets. {#tbl:primary-results}
+: Historical baseline fixed-validation results and undergraduate targets. {#tbl:primary-results}
 
 **Selected checkpoint:** `checkpoint_classification_rescue.pth`, initialized from completed joint epoch 200, followed by 30 frozen-backbone head-only epochs; SHA-256 \artifacthash{d7248e8903fd1f062687ae33a22ad0374ca1b9927445443dcde55dcde128d116}.<br>
 **Completed training:** 200 joint epochs in 6:48:03.248 wall time, plus 30 head-only rescue epochs with 3,750 successful updates.<br>
 **Evidence artifact:** `final_evidence_summary.json`, SHA-256 \artifacthash{12e382c71ba919638c971feaf99e9820158b4fbc7b6b0bfe01ac43718c66bdcf}.
 
-The selected system met both undergraduate segmentation targets: whole-pancreas Dice was 0.9202 and lesion Dice was 0.6197. Classification macro-F1 was 0.4640, a shortfall of 0.1360 from the 0.60 target, and therefore did not meet the requirement; the fact that its bootstrap interval crosses 0.60 does not change a target decision based on the point estimate. The evidence shows that the shared system can produce strong segmentation and non-degenerate subtype predictions, but without single-task ablations it does not establish positive transfer, and subtype discrimination remains the principal failure.
+The baseline system met both undergraduate segmentation targets: whole-pancreas Dice was 0.9202 and lesion Dice was 0.6197. Classification macro-F1 was 0.4640, a shortfall of 0.1360 from the 0.60 target, and therefore did not meet the requirement; the fact that its bootstrap interval crosses 0.60 does not change a target decision based on the point estimate. These already-observed values motivated the post-baseline v5 extension. They remain the immutable fallback and must not be presented as a first-look evaluation of v5.
 
 ## Segmentation distribution
 
@@ -433,7 +456,7 @@ Lesion performance was strongly associated with reference lesion size in an expl
 | 2 | 12 | 5 | 0.600000 | 0.250000 | 0.352941 |
 | **Macro average** | 36 | 36 | 0.514815 | 0.475926 | **0.463993** |
 
-: Fixed-validation three-class classification results. {#tbl:classification-results}
+: Historical-baseline fixed-validation three-class classification results. {#tbl:classification-results}
 
 ![Fixed-validation three-class confusion matrix for the selected checkpoint ($n=36$). Rows are reference subtypes, columns are predicted subtypes, and cells are raw case counts.](figures/confusion_matrix.png){#fig:confusion-matrix width=62%}
 
@@ -454,7 +477,67 @@ The selected artifact used the joint epoch-200 weights followed by 30 frozen-bac
 
 Table 9 abbreviates the filenames \path{checkpoint_best.pth}, \path{checkpoint_best_multitask.pth}, \path{checkpoint_final.pth}, and \path{checkpoint_classification_rescue.pth}; J denotes a completed joint epoch and H a head-only epoch. The rescue was selected because it raised macro-F1 from 0.1333 for the source final checkpoint to 0.4640 while leaving segmentation numerically identical, as expected from the frozen encoder and decoder. It still missed the 0.60 classification target. The comparison supports the value of the disclosed head-only recovery for this run, but it does not establish positive multi-task transfer or an attention benefit. The selection JSON has SHA-256 \artifacthash{ede14194973f5f63d7ddb40b86cffdf0d63b862488582f73cf546caeedbb0de4}.
 
-## Qualitative review
+## Train-only v5 neural-head results
+
+| Locked neural head | Trainable parameters | Repeat OOF macro-F1 | Mean OOF macro-F1 | Minimum repeat/class recall |
+|---|---:|---|---:|---:|
+| Lesion-aware mean MIL | 117,263 | 0.4527 / 0.4011 / 0.4054 | 0.4197 | 0.2976 |
+| **Two-query cross-attention MIL (selected)** | **101,391** | **0.4694 / 0.5272 / 0.5273** | **0.5080** | **0.4355** |
+
+: Complete train-only comparison of the two prospectively locked neural heads. Each repeat aggregates five OOF folds over all 252 training cases. {#tbl:v5-head-comparison}
+
+Cross-attention exceeded the mean-MIL control in every repeat and improved the declared mean criterion by 0.0882, outside the 0.01 tie band. It also improved the minimum repeat/class recall by 0.1379. The selected-head bundle SHA-256 is \artifacthash{6e4ed210bc23cd7c7bfe02c46816dd8461c0be84108d4f9d2a36f1409b6df09d}; its final refit state SHA-256 is \artifacthash{7954be6f9620f77dc80365df97bf374b84e976ad5df12f3dc4ea4acc34892e3f}. Strict bundle loading on CUDA reproduced cached refit logits bitwise in two fresh loads.
+
+The strongest warning is the generalization gap. After refitting on all 252 training cases, the selected head achieved 0.978711 resubstitution macro-F1 and minimum class recall 0.962264, compared with mean repeated OOF macro-F1 0.507965 and minimum repeat/class recall 0.435484. The 0.470747 macro-F1 gap is substantial overfitting, not evidence that the refit is nearly perfect. Moreover, the OOF number is head-comparison evidence only: the shared encoder and original rescue head were fixed across folds after training on all 252 labels, so it is not an unbiased end-to-end performance estimate. Selecting the winner of two heads can also make the winning OOF estimate optimistic.
+
+The cross-fitted class-offset rule reduced mean repeated OOF macro-F1 from 0.507965 to 0.504068 (gain $-0.003897$) and reduced the minimum repeat/class recall from 0.435484 to 0.419355. The required gain condition failed, so offsets were rejected and the final vector is exactly `[0,0,0]`. This negative result is retained rather than activating a user-suggested technique merely to claim it was used.
+
+The v5 training run is public in W&B as [`u03yz7ds`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/u03yz7ds). It records both candidate names, all repeat/fold trajectories, refit markers, train-only OOF summaries, and `official_validation_used=false`. The fit, selection, decision-offset, and refit audit hashes are, respectively, \artifacthash{16831b1249de84e6f89391903cd9510f7a21e1fa85389d3ca33b76fbb70c7274}, \artifacthash{a7f397ea0bf86c551b13692e5e4c329999573e6b398486046e9392639304444c}, \artifacthash{87233541474dcd3226866912c7968c05b1ba4b855ed6075239763bfac9c6bcf0}, and \artifacthash{b2bb4adfebe4bc01edfb8e676c2c8894a0b7b328a39bf29c24f57b5ffc33e3f0}.
+
+## Locked v5 official reevaluation and replacement gate
+
+The v5 candidate was frozen before one permitted post-hoc reevaluation on all 36 supplied validation cases. The following results come from the consumed immutable gate artifacts, not from OOF or resubstitution values.
+
+| Metric ($n=36$) | Locked v5 result | 95% CI | Undergraduate / higher-tier thresholds | Status |
+|---|---:|---:|---:|---|
+| Whole-pancreas Dice | $0.9202\pm0.0358$ | [0.9079, 0.9308] | $\geq0.90$ / $\geq0.91$ | **met / met** |
+| Lesion Dice | $0.6197\pm0.3207$ | [0.5148, 0.7165] | $\geq0.27$ / $\geq0.31$ | **met / met** |
+| Classification macro-F1 | 0.5254 | [0.3584, 0.6736] | $\geq0.60$ / $\geq0.70$ | **not met / not met** |
+
+: Single locked post-hoc v5 official-validation reevaluation. Decisions use the unrounded point estimates. {#tbl:v5-official-results}
+
+Classification accuracy was 0.5278 (95% case-bootstrap CI [0.3611, 0.6944]). The class-level result was:
+
+| Reference subtype | Support | Predicted count | Precision | Recall | F1 |
+|---:|---:|---:|---:|---:|---:|
+| 0 | 9 | 9 | 0.555556 | 0.555556 | 0.555556 |
+| 1 | 15 | 10 | 0.500000 | 0.333333 | 0.400000 |
+| 2 | 12 | 17 | 0.529412 | 0.750000 | 0.620690 |
+| **Macro average** | 36 | 36 | 0.528322 | 0.546296 | **0.525415** |
+
+: Locked v5 official-validation classification results. {#tbl:v5-classification-results}
+
+With rows as references and columns as predictions, the confusion matrix was
+
+$$
+\begin{bmatrix}
+5 & 2 & 2 \\
+4 & 5 & 6 \\
+0 & 3 & 9
+\end{bmatrix}.
+$$
+
+Subtype 1 remained the principal weakness: only 5 of 15 cases were correctly classified, and 6 were assigned subtype 2. The 95% macro-F1 interval is descriptive; the replacement and target decisions are based on the predeclared unrounded point estimate.
+
+The single locked inference completed all 36 cases in 122.607 seconds and wrote 36 masks, 36 subtype rows, 36 probability rows, and a complete runtime record. Its Windows PowerShell 5.1 wrapper then failed during post-inference runtime auditing, before either reference path was tested or opened: two `PSObject.Properties.Count` expressions were incompatible with this host, and the attempted failure-ledger transition separately encountered `File.Replace(..., null)` incompatibility. The saved 39-artifact inference set was revalidated with digest \artifacthash{fec59a6b546d9158e6a32eb6be1d4f889b296a184b877dfc0e5baa323e180b28}; the full strict runtime validator passed after only the two in-memory collection-count substitutions. Inference was not rerun. A separate recovery protocol and execution lock were frozen before reference access. The recovery preserved the original consumed-ledger bytes, allowed zero inference calls and exactly one invocation of the unchanged evaluator, and recorded the interruption in the completed gate. This was an audit-only saved-output continuation, not an uninterrupted wrapper execution.
+
+Validation identifiers contain label-like prefixes, so this work does not claim that the human operator was blinded to all label cues. The defensible protection is narrower: identifiers were not model inputs, no per-case prediction-based optimization occurred, reference files remained unopened until outputs were hash-frozen, and no model, threshold, or decision rule changed after inference.
+
+The v5 macro-F1 of 0.5254150702 is strictly greater than the frozen baseline value 0.4639934052, an absolute improvement of 0.0614216651. Every required inference, geometry, determinism, and packaging contract passed, so the strict classifier-replacement gate passed and the two-query cross-attention MIL classifier is authoritative. This means only that v5 was the stronger of the two prospectively locked neural heads and passed the baseline-replacement rule; it is not a globally best-model claim. Neither the undergraduate 0.60 nor higher-tier 0.70 classification performance bar was met. Consequently, the complete undergraduate performance bar was not cleared, and the higher-tier joint metric gate also failed before considering speed. Gate SHA-256 is \artifacthash{6efb7d9cfb745ecffc06cd5c981ab360b980dfb5d2a49b18537d1aab236c3df7}; bound metrics SHA-256 is \artifacthash{bdc3e538266b5fff886e5fc7205d36f0ff66c3794b3d51143ce413326c967a6b}.
+
+## Historical-baseline qualitative review
+
+The following cases and subtype predictions belong to the already-observed immutable baseline, not the locked v5 reevaluation. They were selected by the baseline report's deterministic strong/weak rule and are retained for continuity; they were not used to tune v5.
 
 | Role | Case | Whole Dice | Lesion Dice | Reference / prediction subtype |
 |---|---|---:|---:|---:|
@@ -463,63 +546,83 @@ Table 9 abbreviates the filenames \path{checkpoint_best.pth}, \path{checkpoint_b
 | Weak 1 | `quiz_2_191` | 0.7935 | 0.0000 | 2 / 0 |
 | Weak 2 | `quiz_1_227` | 0.9347 | 0.0000 | 1 / 0 |
 
-: Deterministically selected qualitative validation cases. {#tbl:qualitative-cases}
+: Deterministically selected historical-baseline qualitative validation cases. {#tbl:qualitative-cases}
 
 The panel reinforces that segmentation quality and subtype correctness are not interchangeable: `quiz_0_184` has near-matched lesion contours but the wrong subtype, whereas both zero-lesion-overlap cases also receive subtype 0. Its predicted/reference lesion volumes were 56,103/55,780 voxels; the correctly classified strong case `quiz_1_164` had 18,538/19,150. In `quiz_2_191`, the 20,223-voxel predicted lesion occupies a remote region relative to the 4,248-voxel reference, combining false-positive and false-negative regions rather than a small boundary shift. For `quiz_1_227`, the corresponding volumes were 287/1,724 voxels. The strong cases still show modest boundary discrepancies. These examples explain individual metric values but do not establish that a visual pattern causes a subtype error.
 
 ## Inference efficiency
 
-Acceleration is optional at the undergraduate level, so no optimized-runtime claim is made. The required baseline joint inference is measured end to end, including model initialization, NIfTI I/O, preprocessing, mirrored sliding-window prediction, geometry restoration, and export. `torch.cuda.synchronize` is called explicitly immediately before and after the timed region, and CUDA peak-memory counters are reset before timing.
+The historical baseline joint inference was measured end to end, including model initialization, NIfTI I/O, preprocessing, mirrored sliding-window prediction, geometry restoration, and export. `torch.cuda.synchronize` was called immediately before and after the timed region, and CUDA peak-memory counters were reset before timing. These values document the delivered baseline but are not used as the strict higher-tier speed comparator.
 
 | Split | Cases | Total (s) | Mean (s/case) | Peak MiB (allocated / reserved) |
 |---|---:|---:|---:|---:|
 | Validation | 36 | 112.306 | 3.1196 | 2,173.889 / 2,492 |
 | Test | 72 | 248.115 | 3.4460 | 2,173.272 / 2,492 |
 
-: Baseline end-to-end joint-inference efficiency. {#tbl:inference-runtime}
+: Historical baseline end-to-end joint-inference efficiency. {#tbl:inference-runtime}
+
+The upgrade separates two questions. The narrow v3 dependency-pruning experiment is retained only as a frozen causal design plus two-case train-only exact-conformance evidence; it was not executed as a final all-72 timing benchmark, and no v3 speed claim is made. The assignment speed gate instead compares the installed nnU-Net v2.8.1 stock entry point with the selected joint candidate in strict ABBA order, two timed repeats per arm, using the same checkpoint, plans, fold, all 72 inputs, TTA axes, Gaussian weighting, 0.5 tile step, CUDA device, no-warm-up policy, and export semantics. Both arms run under the same post-lock, non-default deterministic execution policy on this NVIDIA RTX 4060 Laptop GPU. The installed stock path retains three preprocessing/export workers, whereas the custom candidate path is serial; those are properties of the compared end-to-end implementations rather than a controlled worker-count ablation. The candidate also produces subtype outputs, so it is not credited for omitting required work. ABBA places stock at both endpoints to reduce monotonic-drift bias, but with no warm-up and only two repeats per arm, the first stock run may bear disproportionate cold filesystem or model-cache cost. The measured difference applies only to these exact executions, pipelines, software, inputs, and hardware; no hardware-general speed claim is made.
+
+| Strict all-72 comparison | Mean end-to-end time | Runtime reduction vs stock | Exact mask agreement |
+|---|---:|---:|---|
+| Stock nnU-Net v2.8.1 | 236.7340 s (3.2880 s/case) | reference | reference |
+| Selected joint candidate | 281.2425 s (3.9061 s/case) | $-18.8011\%$ (**slower**) | **passed; 0 mismatched voxels** |
+
+: Strict stock-versus-candidate speed gate over 72 cases. Negative reduction means increased runtime. {#tbl:v5-speed-gate}
+
+The speed gate was rejected: instead of being at least 10% faster, the candidate was 18.8011% slower than stock. This does not negate the numerical-equivalence evidence. Across the 141,878,022-voxel 72-case corpus, the paired audit found zero disagreeing hard-mask voxels; case names, shape, affine, voxel sizes, qform/sform, spatial units, header dtype, and mask value domain all passed. The two candidate repeats also produced identical subtype decisions and probabilities (maximum absolute probability delta 0). The authoritative speed audit has SHA-256 \artifacthash{8e56b970e9922627a57b60762c381956410d8f0d6b3884d3799edc633bb2f4a5}. Disabling TTA, changing its axes, increasing tile step, or counting an out-of-memory fallback remained ineligible and was not used.
+
+Determinism was treated as a correctness contract rather than hidden cleanup. The first train-only full-versus-pruned smoke differed by 3 and 10 boundary voxels across the two smoke cases because the nnU-Net predictor constructor re-enabled cuDNN benchmarking. A conformance lock was frozen before repair; the runtime now sets deterministic algorithms, cuDNN deterministic mode, `CUBLAS_WORKSPACE_CONFIG=:4096:8`, disables TF32 and compilation, and reasserts those settings after predictor construction. A later stock-versus-candidate smoke still differed by 5 and 15 boundary voxels across the same two cases. The cause was isolated to terminal export precision: stock resampled stitched FP16 logits, whereas the candidate cast them to FP32 first. A second narrow amendment was frozen before removing only the two terminal casts; model forwards, accumulated logits, case bags, neural-head features, probabilities, and decisions were not changed. This amendment aligns v5 export semantics with stock, but it also means frozen network weights alone do not make newly exported v5 masks byte-identical to the historical baseline package at every boundary voxel. The final fresh-process conformance and strict all-72 benchmark both achieved exact hard-mask agreement under the frozen equivalence policy. Both failed smokes remain disclosed because they motivated the bounded repairs.
+
+This chronology is a literal protocol deviation, not perfect compliance with the original stock-speed lock. That earlier lock prohibited later candidate changes and train-only timing smokes; nevertheless, the conformance runs retained internal or reconstructable timing fields, and the two bounded inference repairs changed implementation code. Those diagnostic timings are ineligible and excluded from the final speed arithmetic. No official-validation or test target was used, each repair had its own prospective lock before its edit, and no weights, learned features, selected head, or class offsets changed. These mitigations preserve the scientific value of the exact-equivalence repair, but they do not erase the deviation.
+
+The completed benchmark harness then received its own train-only functional check with duration evidence disabled. Its first attempt failed a process-provenance assertion because the launcher PID and inner deterministic-inference PID were different; the harness audit was corrected to bind both identities. A fresh replacement attempt passed for stock and candidate with no OOM or CPU-result fallback, identical two-case masks and checked geometry/dtype, and valid candidate subtype exports. Both attempts are retained as non-timing diagnostics and neither contributes to the final speed statistic.
 
 # Discussion
 
 ## Interpretation of the joint approach
 
-The shared system retained strong segmentation: both whole-pancreas and lesion point estimates exceeded their undergraduate targets, and the rescue left those outputs byte-equivalent to the final joint model because the encoder and decoder were frozen. The joint classifier itself collapsed toward weak patch-level discrimination, and the disclosed head-only rescue materially increased full-volume macro-F1 from 0.1333 to 0.4640. That result is useful but remains below target. Because there is no segmentation-only or classification-only control, these data cannot show positive transfer between tasks; because there is no global-average-only control, they also cannot show that cross-attention improved classification.
+The historical baseline retained strong segmentation: both whole-pancreas and lesion point estimates exceeded their undergraduate targets, and the rescue left those outputs byte-equivalent to the final joint model because the encoder and decoder were frozen. Its joint classifier collapsed toward weak patch-level discrimination, and the disclosed head-only rescue increased the already-observed full-volume macro-F1 from 0.1333 to 0.4640 but still missed the undergraduate classification target.
 
-Several design properties are defensible independently of the final score. First, the mandatory ResEnc M architecture and nnU-Net preprocessing were preserved rather than replaced for convenience. Second, the classifier receives the actual deepest shared representation and contributes gradients to that encoder. Third, global average and attention pooling provide complementary summaries without modifying the segmentation decoder. Fourth, independent full-volume evaluation prevents patch monitoring values from being presented as final validation outcomes.
+The post-baseline v5 experiment is stronger as a model-selection attempt because it compares exactly two locked, assignment-conforming neural case heads over three complete five-fold OOF repeats and then applies a predeclared replacement rule. Cross-attention beat the mean-MIL control in every repeat, but the 0.9787 resubstitution versus 0.5080 OOF result prevents a triumphalist interpretation. On the single locked post-hoc reevaluation, v5 improved official macro-F1 from 0.4640 to 0.5254 and therefore passed the strict replacement rule, while still missing both classification targets. It is the stronger of the two locked heads, not a globally best model. Because the representation is common and label-exposed across folds, and because the heads differ in more than one pooling operation, the experiment does not isolate a causal cross-attention effect or establish positive multi-task transfer.
+
+Several design properties are defensible independently of the final score. First, the mandatory ResEnc M architecture and nnU-Net preprocessing were preserved. Second, the original classifier receives the deepest shared representation and contributes gradients to that encoder. Third, v5 uses production-matched features and only model-predicted lesion maps, avoiding a reference-mask feature that would be unavailable at inference. Fourth, saved-prediction evaluation prevents patch monitoring or train-only OOF values from being relabelled as official full-volume results.
 
 ## Expected and observed failure mechanisms
 
 Lesion Dice is intrinsically more volatile than whole-pancreas Dice because a fixed boundary displacement occupies a larger fraction of a small target, and a complete miss produces zero. Whole-pancreas evaluation merges labels 1 and 2, so a lesion voxel predicted as ordinary pancreas remains correct for the whole-organ metric. A strong whole-pancreas result therefore cannot establish lesion delineation.
 
-Patch-level classification creates another failure mode. A crop may contain little or no discriminative lesion tissue while retaining the case label. The non-lesion reliability factor reduces that noise during training, but at inference every tile contributes equally to the subtype probability. Uniform tile averaging is therefore a plausible source of evidence dilution, but this run did not measure tile-level lesion content against classification confidence; it remains a hypothesis for future ablation.
+Patch-level classification creates another failure mode. A crop may contain little or no discriminative lesion tissue while retaining the case label. The baseline non-lesion reliability factor reduces that noise during training, but its uniform inference averaging can dilute evidence. V5 addresses this mismatch by ranking tiles and pooling tokens with the model's own predicted lesion mass. That design can still fail when segmentation probabilities rank the wrong region, and its lack of positional encoding makes the attention head invariant to token permutation beyond content and the lesion prior.
 
-Class weighting raises the optimization cost of subtype-0 mistakes, but it cannot manufacture distinguishing features. The observed confusion matrix shows low subtype-2 recall alongside higher subtype-2 precision. Without an unweighted-loss ablation, the report cannot attribute this trade-off specifically to the weights.
+The baseline class weighting raised the optimization cost of subtype-0 mistakes, but it could not manufacture distinguishing features. V5 used class-balanced sampling instead of weighted loss. Its head-level OOF improvement does not identify which component caused the change. The rejected log-score offsets are informative: imbalance handling should remain contingent on measured train-only evidence rather than being activated because it sounds appropriate.
 
 ## Limitations
 
 The principal limitations are:
 
-1. **Small fixed validation set.** Thirty-six cases, including only nine subtype-0 cases, produce uncertain and discrete class estimates.
-2. **No repeated seeds or cross-validation.** One stochastic training trajectory cannot quantify optimization variance or split sensitivity.
-3. **Validation-development reuse.** Repeated monitoring and checkpoint comparison can overfit decisions to the fixed validation set despite zero gradient leakage.
-4. **Cropped ROIs.** The task omits full-scan localization, so performance cannot be extrapolated to an uncropped clinical CT workflow.
-5. **No external validation.** Scanner, institution, population, and protocol generalization remain unknown.
-6. **Patch/case mismatch.** Classification is supervised on patches with a case label and averaged uniformly over inference tiles.
-7. **Fixed task weighting.** The 0.5 coefficient was not supported by a controlled task-weight ablation or gradient-conflict analysis.
-8. **Nondeterministic training.** The split is fixed, but stochastic augmentation and CUDA execution are not made bitwise reproducible.
-9. **Limited metric scope.** Dice and macro-F1 do not measure calibration, boundary distance, or clinical utility.
-10. **Substantial AI assistance.** AI accelerated implementation but creates semantic-error and verification risk, especially under a deadline.
+1. **Small official validation set.** Thirty-six cases, including only nine subtype-0 cases, produce uncertain and discrete class estimates.
+2. **Post-baseline extension.** The original official result was known and the source checkpoint was validation-selected before v5 locks existed; the new pass is a post-hoc reevaluation, not an untouched first look.
+3. **OOF is not end-to-end.** The shared encoder and rescue head had seen all 252 training labels and are common to every head fold, so v5 OOF estimates only the incremental head comparison.
+4. **Severe refit overfitting.** Resubstitution macro-F1 0.9787 versus mean repeated OOF 0.5080 shows that the selected head can nearly memorize the training representation.
+5. **Selection optimism.** The reported head is the winner of two candidates, and the score-offset cross-fitting was not nested around neural-head fitting. Offsets were rejected, so the latter does not alter the final decision rule.
+6. **Single backbone trajectory.** Three repeated head splits quantify head-level variation, not variation from retraining the 102.8-million-parameter network.
+7. **Cropped ROIs.** The task omits full-scan localization, so performance cannot be extrapolated to an uncropped clinical CT workflow.
+8. **No external validation.** Scanner, institution, population, and protocol generalization remain unknown.
+9. **Representation constraints.** V5 retains only three ranked tiles, depends on predicted lesion mass, and uses attention without positional encoding.
+10. **Limited metric scope.** Dice and macro-F1 do not measure probability reliability, boundary distance, or clinical utility.
+11. **Substantial AI assistance.** AI accelerated implementation but creates semantic-error and verification risk, especially under a deadline.
 
-No calibration study, clinical reader study, prospective evaluation, or safety analysis was performed. The output is not suitable for diagnosis or patient care.
+No probability-reliability study, clinical reader study, prospective evaluation, or safety analysis was performed. The output is not suitable for diagnosis or patient care.
 
 ## Next experiments
 
-Given more time and compute, the highest-value experiments would be repeated-seed or cross-validated training; a global-average-only versus hybrid-attention ablation; segmentation-only and classification-only controls; gradient-scale/conflict diagnostics for adaptive task weighting; lesion-volume-stratified analysis; calibrated case-level classification; and lesion-aware tile aggregation. External validation would be required before any translational claim. A speed optimization should be evaluated only under a fixed accuracy tolerance and synchronized end-to-end timing protocol.
+Given more time and compute, the highest-value experiments would be fully nested cross-validation that retrains the encoder within each outer fold; repeated backbone seeds; stronger head regularization selected inside the nesting; position-aware versus permutation-invariant attention; segmentation-only and classification-only controls; lesion-volume-stratified analysis; probability-reliability assessment; and evaluation on an institutionally distinct permitted dataset. External validation would be required before any translational claim. Any further speed optimization should retain the same strict stock comparator, output agreement, and synchronized end-to-end timing protocol.
 
 # AI-assisted workflow and candidate contribution
 
 The brief explicitly requests AI coding tools and more than 50% AI-generated code. This project used OpenAI Codex for a substantial majority of the initial implementation and documentation, including requirement extraction, data-audit code, the network/trainer/predictor, tests, metric and packaging utilities, debugging support, and report composition. An estimated 85–95% of the initial repository implementation and documentation was AI-generated. This range is based on file-level provenance and the recorded workflow, not a misleading post-formatting line count; exact attribution is inherently approximate after library-generated configuration, automated formatting, candidate review, and revisions.
 
-Amirfaham Fallahpour is the candidate, project owner, and final accountable reviewer. He set the objective and quality threshold; specified that the result should be the strongest defensible submission rather than a minimal completion; provided the data, compute, time constraints, identity, and authorization; and remained available for human-only authentication and consequential trade-offs. He will review the final technical explanations and artifacts, decide what is submitted, and accept responsibility for every final claim. These are meaningful candidate contributions without falsely claiming manual authorship of AI-generated code.
+Amirfaham Fallahpour is the candidate, project owner, and final accountable reviewer. He set the objective and quality threshold; specified that the result should be the strongest defensible submission rather than a minimal completion; provided the data, compute, time constraints, identity, and authorization; and remained available for human-only authentication and consequential trade-offs. He also proposed class-specific decision thresholds and stronger imbalance mitigation. Those ideas materially shaped the locked v5 experiment: separate binary thresholds were adapted to multiclass log-score offsets, and imbalance handling became deterministic balanced sampling without double-weighting. The offsets were ultimately rejected on the predeclared train-only gate, which is itself evidence that his proposal was tested rather than merely named. He will review the final technical explanations and artifacts, decide what is submitted, and accept responsibility for every final claim. These are meaningful candidate contributions without falsely claiming manual authorship of AI-generated code.
 
 The workflow used seven controls:
 
@@ -531,7 +634,7 @@ The workflow used seven controls:
 6. have the candidate review consequential choices, and require his review of final outputs before upload; and
 7. adversarially validate the public repository, PDF, and extracted ZIP before submission.
 
-AI output was treated as untrusted initial output. Verification includes unit tests on synthetic edge cases, source and converted-data audits, a planned-patch forward/backward smoke test, explicit split checks, W&B/local training logs, independent saved-prediction evaluation, and full archive validation. One concrete failure occurred during AI-assisted environment bootstrapping: dependency resolution replaced the intended CUDA-enabled PyTorch build. A direct CUDA availability/tensor test exposed the error before training; the environment was rebuilt with the explicit PyTorch CUDA 12.8 index and `torch==2.8.0+cu128`, followed by `pip check` and a real GPU tensor operation. This illustrates why successful installation alone was not accepted as verification. The detailed responsibility matrix and prompt categories appear in `docs/AI_WORKFLOW.md`. Credentials and sensitive interaction records are not published.
+AI output was treated as untrusted initial output. Verification includes unit tests on synthetic edge cases, source and converted-data audits, a planned-patch forward/backward smoke test, explicit split checks, W&B/local training logs, separately implemented saved-prediction evaluation, complete OOF recomputation, cache and model-state hashing, deterministic inference smokes, and full archive validation. One concrete failure occurred during AI-assisted environment bootstrapping: dependency resolution replaced the intended CUDA-enabled PyTorch build. A direct CUDA availability/tensor test exposed the error before training; the environment was rebuilt with the explicit PyTorch CUDA 12.8 index and `torch==2.8.0+cu128`, followed by `pip check` and a real GPU tensor operation. The later deterministic-inference smokes also exposed two small but real output disagreements before the bounded fixes described above. These incidents illustrate why successful execution alone was not accepted as verification. The detailed responsibility matrix and prompt categories appear in `docs/AI_WORKFLOW.md`. Credentials and sensitive interaction records are not published.
 
 # Reproducibility and deliverables
 
@@ -552,7 +655,7 @@ AI output was treated as untrusted initial output. Verification includes unit te
 | Training seed | no global deterministic seed enforced |
 | Evaluation bootstrap seed | 12345 |
 | Dependency specification | `requirements.txt` |
-| Evaluated implementation commit | \artifacthash{41ab3abc6227e6eb070958a22e61eb76dd5d2254} |
+| Evaluated implementation commit | \artifacthash{39b2a60da54e43ffdda648562fc296a8c9910cd9} |
 
 : Software, hardware, and reproducibility environment. {#tbl:environment}
 
@@ -633,37 +736,40 @@ python .\scripts\validate_submission.py `
   --expected-count 72 --output-json <SUBMISSION_AUDIT_JSON>
 ```
 
-The commands above are verified against each CLI's `--help` output at the evaluated source commit.
+The commands above reproduce the historical baseline path. The locked v5 path adds train-only case-feature extraction and neural-head training, then uses `Run-V5LockedFinalEvaluation.ps1` for the single post-lock inference. After its disclosed PowerShell 5.1 audit failure, the separately locked `Run-V5OfficialEvaluationRecovery.ps1` performed zero inference calls and evaluated only the already hash-frozen outputs. `Run-V5LockedSelectedTestAndPackagePS51.ps1` ran only after the strict replacement gate was consumed. These wrappers verify locks, implementation and model hashes, data-scope ledgers, deterministic CUDA settings, pre-reference prediction hashes, recomputed gate metrics, and output-directory separation before permitting downstream work. The evaluated implementation is bound to commit \artifacthash{39b2a60da54e43ffdda648562fc296a8c9910cd9}.
 
 ## Final test package contract
 
 The archive root must contain exactly 72 masks named like `quiz_037.nii.gz` and one `subtype_results.csv`. The CSV header is exactly `Names,Subtype`; names match the masks one-to-one and subtype values are integers in `{0,1,2}`. No parent folder, source image, hidden file, or reference label is permitted.
 
-The validator extracts the ZIP to a temporary directory and checks member-path safety, duplicate and missing cases, exact counts, readable finite NIfTI data, integer `{0,1,2}` labels, shape/affine/spacing agreement with every input CT, CSV schema, unique rows, and class ranges. Final evidence:
+The validator extracts the ZIP to a temporary directory and checks member-path safety, duplicate and missing cases, exact counts, readable finite NIfTI data, integer `{0,1,2}` labels, shape/affine/spacing agreement with every input CT, CSV schema, unique rows, and class ranges. The immutable fallback evidence is:
 
 - archive name: `Amirfaham_Fallahpour_results.zip`;
 - archive SHA-256: \artifacthash{5de55f4ccc1eea78ef8974d0f362039523404a1d6315d06d0ec41ec8f0d08391}; and
 - validator status/audit: `valid=true`, 72 masks and 72 CSV rows, zero issues, in `source_test_archive_validation.json` (SHA-256 \artifacthash{f6f304af09ed41b16d467398180d3b6b9e4ec99c8b64ae375224ad0efaf446ee}).
+
+After v5 passed the strict replacement gate, the selected inference and packaging path completed once. The authoritative archive has SHA-256 \artifacthash{34afe1d74b70a24facceee890c03919bc5dbe036383206079fe221aa34ddd444}; both the prediction-directory and extracted-archive validators passed with 72 readable masks, 72 subtype rows, valid integer labels, matching geometry, and zero issues. The ZIP contains 73 flat-root files: the 72 masks and `subtype_results.csv`.
 
 The final report hash is written after PDF generation to the external submission
 manifest; embedding a PDF's own hash inside that PDF would be self-referential.
 
 # Conclusion
 
-This project implements the required nnU-Net v2 3D ResEnc M multi-task system while treating data integrity, leakage prevention, independent evaluation, and AI disclosure as part of the technical result. The classifier combines global context and learned-query cross-attention over the shared bottleneck; training addresses subtype frequency imbalance and patch-level evidence without changing the supplied split or using external weights. The final system obtains whole-pancreas Dice 0.9202, lesion Dice 0.6197, and macro-F1 0.4640, meeting two of three undergraduate performance targets. Its strongest supported property is segmentation, especially lesion Dice substantially above the 0.27 target. Its principal weakness is subtype discrimination, particularly subtype-2 recall of 0.25. The result supports a carefully validated segmentation system with a non-degenerate but insufficient classifier, not a claim of positive multi-task transfer or clinical readiness.
+This project implements the required nnU-Net v2 3D ResEnc M multi-task system while treating data integrity, leakage control, saved-artifact evaluation, and AI disclosure as part of the technical result. The immutable baseline obtained whole-pancreas Dice 0.9202, lesion Dice 0.6197, and macro-F1 0.4640. The post-baseline v5 attempt then compared two locked neural case heads using only the 252 training cases for head development. Two-query cross-attention MIL was the stronger of those two heads by mean repeated OOF macro-F1, 0.5080 versus 0.4197, while its 0.9787 resubstitution score exposed severe overfitting and sharply limits the claim. Class offsets were rejected when they failed the train-only gain gate. On the locked post-hoc reevaluation, v5 obtained whole-pancreas Dice 0.9202, lesion Dice 0.6197, and macro-F1 0.5254. The macro-F1 strictly improved on the baseline, so v5 was selected and its validated 72-mask/72-subtype ZIP is authoritative. However, classification missed both the undergraduate 0.60 and higher-tier 0.70 bars, and the strict speed audit found the candidate 18.8011% slower rather than at least 10% faster. Thus neither the complete undergraduate performance bar nor the higher-tier bar was cleared. The result supports a best-of-two locked-head selection only, not global optimality, positive multi-task transfer, clinical readiness, or a PhD-level performance claim.
 
 # Requirement-to-evidence traceability {.unnumbered}
 
 - **Required 3D ResEnc M:** generated `plans.json` plus the trainer architecture guard; Sections 3.1–3.3 and Fig. 1.
 - **Shared encoder and two outputs:** `network.py`, tensor/gradient tests, and Sections 3.2–3.4.
-- **W&B for both tasks:** custom trainer logger, exported curves, and [public run `hrs05iyx`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx); Section 4.2 and Figs. 2–3.
-- **Classification imbalance and overfitting controls:** weighted classification objective, patch-reliability weighting, augmentation, and task-specific monitoring; Sections 3.5–3.7.
-- **Metrics Reloaded-aligned validation:** independent evaluator, complete-checkpoint selector, saved aggregate/case artifacts, and Figs. 4–6; `final_evidence_summary.json` SHA-256 \artifacthash{12e382c71ba919638c971feaf99e9820158b4fbc7b6b0bfe01ac43718c66bdcf}.
-- **No validation optimization:** disjoint split manifest and training log; Sections 2.3 and 4.
+- **W&B for both tasks:** custom trainer logger, exported curves, [baseline run `hrs05iyx`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx), and [v5 train-only run `u03yz7ds`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/u03yz7ds); Section 4.2 and Figs. 2–3.
+- **Classification imbalance and overfitting controls:** baseline weighted loss/patch reliability plus v5 balanced sampling, repeated OOF comparison, explicit resubstitution gap, and rejected log-score offsets; Sections 3.5–3.7, 4.5–4.7, and 6.5.
+- **Metrics Reloaded-aligned validation:** implementation-separated saved-prediction evaluator, complete baseline checkpoint selector, immutable v5 gate ledger, aggregate/case artifacts, and Figs. 4–6; baseline `final_evidence_summary.json` SHA-256 \artifacthash{12e382c71ba919638c971feaf99e9820158b4fbc7b6b0bfe01ac43718c66bdcf}; v5 gate SHA-256 \artifacthash{6efb7d9cfb745ecffc06cd5c981ab360b980dfb5d2a49b18537d1aab236c3df7}.
+- **Validation boundary:** no validation case contributed gradients or was added to training; the baseline used fixed-validation monitoring/selection, and v5 head development was train-only before one locked post-hoc reevaluation. Sections 2.3, 4, and 6.
+- **Higher-tier speed gate:** strict all-72 stock ABBA audit; numerical equivalence passed but runtime reduction was $-18.8011\%$, so the gate failed; audit SHA-256 \artifacthash{8e56b970e9922627a57b60762c381956410d8f0d6b3884d3799edc633bb2f4a5}.
 - **No external data or pretrained weights:** launch/provenance review and final checkpoint audit; Sections 1, 2.3, and 9.
 - **AI workflow:** `docs/AI_WORKFLOW.md`, 85–95% initial-content estimate, and Section 8.
 - **Public source:** [GitHub repository](https://github.com/Amirfaham1/pancreas-multitask-nnunet), verified 2026-08-06.
-- **72 masks and subtype CSV:** joint inference and extracted-archive validator; ZIP SHA-256 \artifacthash{5de55f4ccc1eea78ef8974d0f362039523404a1d6315d06d0ec41ec8f0d08391}, `valid=true`, zero issues.
+- **72 masks and subtype CSV:** locked selected inference and extracted-archive validator; authoritative v5 ZIP SHA-256 \artifacthash{34afe1d74b70a24facceee890c03919bc5dbe036383206079fe221aa34ddd444}, valid with 72 masks, 72 subtype rows, and zero issues; immutable baseline ZIP SHA-256 \artifacthash{5de55f4ccc1eea78ef8974d0f362039523404a1d6315d06d0ec41ec8f0d08391}.
 
 # References {.unnumbered}
 

@@ -13,7 +13,18 @@ candidate review, and iterative corrections.
 local workspace. No unverified claim is made about an internal backend model
 version.
 
-The project is owned and submitted by **Amirfaham Fallahpour**, an Undergraduate Student and Neuroscience Specialist at the University of Toronto Scarborough. Amirfaham set the project objective, quality standard, risk priorities, deadline strategy, and scope; supplies human-only access and approvals; reviews decisions and artifacts; and accepts responsibility for the final submission. AI assistance does not transfer authorship of experimental evidence or accountability for claims.
+The project is owned and submitted by **Amirfaham Fallahpour**, an
+Undergraduate Student and Neuroscience Specialist at the University of Toronto
+Scarborough. Amirfaham set the project objective, quality standard, risk
+priorities, deadline strategy, and scope; asked that the extended attempt be
+evaluated against the brief's higher-tier thresholds; proposed
+class-specific decision thresholds and explicit class-imbalance mitigation;
+supplies human-only access and approvals; reviews decisions and artifacts; and
+accepts responsibility for the final submission. Codex translated his
+threshold proposal into multiclass log-score offsets and his imbalance proposal
+into balanced case sampling, while rejecting SMOTE for spatial learned bags and
+avoiding simultaneous sampling plus class-weighted loss. AI assistance does not
+transfer authorship of experimental evidence or accountability for claims.
 
 ## Responsibility matrix
 
@@ -35,7 +46,12 @@ This matrix distinguishes meaningful human contribution from mechanical code aut
 
 ### 1. Requirement extraction before implementation
 
-Codex reads the supplied assessment, translates each requirement into an implementation or artifact contract, and records uncertainty rather than silently choosing an interpretation. Amirfaham confirms the delivery priority: the strongest defensible undergraduate submission, with higher-tier engineering work attempted only after required artifacts are safe.
+Codex reads the supplied assessment, translates each requirement into an
+implementation or artifact contract, and records uncertainty rather than
+silently choosing an interpretation. Amirfaham first required a safe, complete
+undergraduate fallback and, after the deadline extension, explicitly directed a
+locked attempt at the brief's higher numerical and speed thresholds without
+sacrificing that fallback.
 
 Examples of requirement-to-evidence mapping:
 
@@ -46,7 +62,7 @@ Examples of requirement-to-evidence mapping:
 | W&B tracking for both tasks | Public or reviewer-accessible run URL and exported run summary |
 | Class imbalance and overfitting strategy | Configuration, rationale, and learning curves |
 | Validation metrics | Case-level and aggregate metric artifacts |
-| No validation training | Immutable split manifest and data-loader tests |
+| No validation gradients in the v5 extension | Immutable split manifest, train-only extraction/training audits, and explicit disclosure of earlier validation monitoring/selection |
 | No external data/pre-trained weights | Dataset and checkpoint provenance statement |
 | AI workflow | This document and condensed report section |
 | Test masks and subtype CSV | Automated archive contract validation |
@@ -82,6 +98,28 @@ Each run is tied to:
 - saved checkpoints and metric artifacts.
 
 Codex may recommend changes based on loss curves or failures, but no result is reported until the saved checkpoint is re-evaluated. Failed and superseded experiments stay in `WORKLOG.md`.
+
+The final v5 experiment was deliberately narrower than a full restart. Its
+encoder, decoder, production checkpoint, eligible neural-head family, two head
+candidates, repeated-OOF selection rule, decision-offset rule, and replacement
+gate were hash-locked. The supplied validation result was already known from
+the baseline, so the v5 result is described as one locked post-hoc
+reevaluation—not as performance on a previously unknown split. The new head
+development itself used only the 252 training cases.
+
+The locked outcome was mixed and is reported that way. Two-query
+cross-attention MIL was the stronger of the two declared neural heads and
+improved official macro-F1 from `0.46399341` to `0.52541507`, passing the strict
+baseline-replacement rule. Whole-pancreas Dice was `0.92016118` and lesion Dice
+was `0.61966239`. Macro-F1 remained below both the `0.60` undergraduate and
+`0.70` higher-tier thresholds. Accuracy was `0.52778`; class F1 values were
+`0.55556/0.40000/0.62069`, and subtype-1 recall was `0.33333`. The final
+72-case inference took `268.7635` seconds, and its validated ZIP has SHA-256
+`34afe1d74b70a24facceee890c03919bc5dbe036383206079fe221aa34ddd444`.
+In the strict all-72 ABBA benchmark, installed stock nnU-Net averaged
+`236.7340` seconds and the candidate averaged `281.2425` seconds: the candidate
+was 18.8011% slower, so the speed gate failed even though the exact-output
+equivalence gate passed.
 
 ### 5. Human review at consequential boundaries
 
@@ -136,8 +174,18 @@ AI output is treated as an untrusted draft until checked. Verification is propor
 | Misleading metric | Synthetic metric tests, explicit definitions, case-level exports |
 | W&B mismatch | Compare exported summary with local evaluation artifacts |
 | Invalid predictions | Full test-output contract validator |
-| Fabricated report statement | Claim-to-artifact review and retained placeholders |
+| Wrapper fails after valid inference | Freeze and hash saved outputs; lock a zero-inference continuation before reference access; retain the failure record |
+| Windows PowerShell 5.1 incompatibility | Hash-bound compatibility wrappers with exact in-memory substitutions and one-use ledgers |
+| Fabricated report statement | Claim-to-artifact review and final-result token scan |
 | Privacy or credential leak | Git/worktree scan before publication |
+
+The final repository [test suite](../tests/) contains at least 416 passing
+tests, including
+adversarial checks for the v5 model locks, balanced sampler, deterministic
+inference, saved-output recovery, PowerShell 5.1 compatibility path, selected
+test package, and strict stock-speed benchmark. Passing tests support the
+implementation contracts; they do not convert a missed metric or speed gate
+into a success.
 
 ## Known limitations of the AI workflow
 
@@ -145,20 +193,23 @@ AI output is treated as an untrusted draft until checked. Verification is propor
 - Rapid iteration on one validation split can itself become a form of validation overfitting. The number and nature of model-selection decisions must be disclosed.
 - AI cannot guarantee that a short run reaches the requested thresholds, especially for small-lesion segmentation.
 - AI cannot provide clinical validation or claim that performance transfers beyond the supplied cropped dataset.
-- An exact “percentage of code written by AI” is not intrinsically well-defined after formatting, generated configuration, human edits, and dependency use. The final report will give a transparent estimate and the basis used, not false precision.
+- An exact “percentage of code written by AI” is not intrinsically well-defined after formatting, generated configuration, human edits, and dependency use. The final report gives a transparent estimate and the basis used, not false precision.
 - Human review under a deadline may miss subtle issues; automated checks and artifact-based reporting are used to reduce this risk.
 
 ## Data, privacy, and security
 
 - Only the supplied de-identified data are used.
 - Data, model artifacts containing embedded paths, API tokens, and local environment files are excluded from Git.
-- Secrets are entered through normal authentication flows or environment variables and are never pasted into source files or documentation.
+- Credentials are kept out of source files, documentation, artifacts, and Git;
+  W&B authentication is read from the local credential store. Any credential
+  shared directly during an interactive session should be rotated before final
+  handoff.
 - Public release occurs only after Amirfaham’s approval and a repository scan.
 - No output is represented as suitable for clinical use.
 
 ## Final disclosure text for the report
 
-The following concise disclosure will be updated with final facts and included in the report:
+The concise disclosure used for final reporting is:
 
 > This project was completed with substantial assistance from OpenAI Codex, which generated a majority of the initial implementation and documentation, proposed tests, and supported experiment monitoring and analysis. Amirfaham Fallahpour owned the project direction, priorities, access, consequential decisions, verification, editorial review, and final submission. AI-generated work was checked through automated tests, data-integrity audits, saved experiment artifacts, and manual review. No metric was reported without evaluation from a saved model artifact. An estimated 85–95% of the initial repository implementation and documentation was AI-generated; the range is based on file-level provenance and the recorded workflow rather than a post-formatting line count.
 
@@ -168,11 +219,29 @@ A direct `torch.cuda.is_available()` check and real CUDA tensor operation expose
 the problem; the environment was rebuilt from the explicit PyTorch CUDA 12.8
 index and then checked with `pip check`, unit tests, and a real GPU smoke run.
 
+A second AI-generated implementation defect was caught at the official
+delivery boundary. The single v5 inference completed all 36 cases, but two
+post-inference `PSObject.Properties.Count` expressions and a null-backup
+`File.Replace` call were incompatible with Windows PowerShell 5.1. The failure
+occurred before reference access. The workflow preserved and hashed the saved
+outputs, froze a recovery protocol before implementation or reference access,
+performed no second inference, and used
+`Run-V5OfficialEvaluationRecovery.ps1` to invoke the unchanged evaluator once.
+The final test package then used the prospectively hash-bound
+`Run-V5LockedSelectedTestAndPackagePS51.ps1` compatibility wrapper. This is
+disclosed as a saved-output continuation rather than presented as an
+uninterrupted run.
+
+Experiment chronology and negative results are retained in
+[`WORKLOG.md`](../WORKLOG.md). Public experiment evidence includes the
+[baseline joint run](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx)
+and the [v5 train-only head run](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/u03yz7ds).
+
 ## Finalization checklist
 
 - [x] Replace the contribution estimate with a stated method and honest range.
 - [x] Add the exact AI tool/model surface used; do not guess an internal model version.
-- [ ] Link relevant tests, W&B runs, and worklog entries.
+- [x] Link relevant tests, both W&B runs, and worklog entries from the public documentation.
 - [x] Describe at least one AI-generated error or rejected suggestion and how verification caught it.
-- [ ] Confirm that contribution wording matches actual human review performed.
+- [ ] Amirfaham confirms that the contribution wording matches his completed final review before submission.
 - [x] Confirm that no sensitive prompt content, credentials, or data are disclosed.

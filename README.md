@@ -2,19 +2,31 @@
 
 This repository contains Amirfaham Fallahpour's implementation for a job take-home assessment: joint pancreas/lesion segmentation and three-class subtype classification from cropped 3D CT volumes. The model is built on **nnU-Net v2 3D ResEnc M**, as required, with one shared encoder and separate segmentation and classification outputs.
 
-> Completed evidence snapshot (2026-08-06): the 200-epoch joint run and a distinct 30-epoch frozen-head rescue are complete. Four saved candidates were evaluated once on all 36 held-out cases; the rescue checkpoint was selected and used to build a strictly validated 72-case test ZIP. The public W&B run is finished and the repository suite passes 193 tests.
+> Completed evidence snapshot (2026-08-06): the immutable baseline was followed
+> by a separately locked, train-only comparison of two neural case heads. The
+> selected two-query cross-attention MIL head improved official validation
+> macro-F1 from `0.46399341` to `0.52541507`, so it passed the predeclared
+> replacement rule. Official whole-pancreas Dice was `0.92016118` and lesion
+> Dice was `0.61966239`. The final 72-case test ZIP passed every archive and
+> case-level check. The classification and strict speed thresholds were not
+> met, and the repository suite passes at least 416 tests.
 
 ## Method at a glance
 
 - **Backbone:** nnU-Net v2.8.1 `ResidualEncoderUNet`, ResEnc M plan.
-- **Parameters:** 102,764,274 unique learned parameters (102,268,079 in the nnU-Net segmentation backbone and 496,195 in the classification path).
+- **Parameters:** the historical joint model has 102,764,274 unique learned parameters (102,268,079 in the nnU-Net segmentation backbone and 496,195 in its original classification path). The selected frozen-feature v5 case head has 101,391 parameters.
 - **Segmentation output:** background, pancreas (`1`), and lesion (`2`) through the native decoder with deep supervision during training.
-- **Classification output:** the 320-channel encoder bottleneck is summarized by global average pooling and learned-query multi-head cross-attention. Their concatenation passes through LayerNorm, a 128-unit GELU MLP, dropout 0.30, and three logits.
-- **Joint loss:** native nnU-Net Dice + cross-entropy segmentation loss plus `0.5 ×` class-weighted classification cross-entropy with label smoothing 0.05.
-- **Imbalance controls:** inverse-frequency class weights `[1.35484, 0.79245, 1.0]`, 50% foreground oversampling, and a 0.25 weight for subtype loss on training crops containing no lesion voxel.
+- **Classification output:** the baseline branch summarizes the 320-channel bottleneck with global-average and learned-query attention pooling. The selected v5 head instead applies two-query, four-head cross-attention to frozen stage-3 tokens from at most three model-predicted-lesion-ranked tiles, then combines that result with a projected 646-value case summary.
+- **Joint loss:** the historical joint run used native nnU-Net Dice + cross-entropy segmentation loss plus `0.5 ×` class-weighted, label-smoothed classification cross-entropy. V5 froze the encoder and decoder and trained only small case heads with label-smoothed, unweighted cross-entropy.
+- **Imbalance controls:** the baseline used inverse-frequency class weights `[1.35484, 0.79245, 1.0]`, 50% foreground oversampling, and a 0.25 reliability weight for lesion-free subtype crops. V5 used deterministic class-balanced case sampling without simultaneous class weighting.
 - **Inference:** explicit local aggregation across mirror views, spatial tiles, and folds. Segmentation logits follow nnU-Net's geometry-restoring exporter; classification probabilities are averaged separately and never spatially resampled.
 
-No external dataset, public pretrained weight, or validation case is used for optimization.
+No external dataset or public pretrained weight is used. Validation cases never
+contribute gradients. The baseline did use the fixed validation split for
+monitoring and checkpoint/rescue selection; the v5 extension is therefore a
+locked post-hoc reevaluation built on a validation-selected checkpoint. Its new
+head training, head selection, and class-offset fitting use the 252 supplied
+training cases only.
 
 ![Implemented shared-encoder ResEnc M architecture](report/figures/architecture.png)
 
@@ -41,9 +53,14 @@ src/pancreas_multitask/classification_rescue.py Frozen-head rescue safeguards
 scripts/prepare_dataset.py         Audit and non-destructive nnU-Net conversion
 scripts/predict_joint.py           Raw-NIfTI segmentation/classification CLI
 scripts/evaluate_predictions.py    Fixed validation metrics and bootstrap CIs
+scripts/extract_train_case_features.py Frozen train-case feature/bag extraction
+scripts/train_neural_case_heads.py Locked repeated-OOF v5 head comparison
 scripts/audit_classification_rescue_activation.py Train-only rescue gate
 scripts/validate_submission.py     Strict 72-case directory/ZIP validator
 scripts/Package-Submission.ps1     Validate-first atomic delivery packager
+scripts/Run-V5OfficialEvaluationRecovery.ps1 Zero-inference saved-output continuation
+scripts/Run-V5LockedSelectedTestAndPackagePS51.ps1 Final PowerShell 5.1 delivery path
+scripts/Run-StockInferenceSpeedBenchmark.ps1 Strict all-72 ABBA comparator
 scripts/benchmark_training.py      Short CUDA timing/memory probe
 tests/                             Data, network, trainer, metric, inference tests
 report/report.md                   Artifact-driven technical-report source
@@ -142,12 +159,11 @@ Copy-Item -LiteralPath (Join-Path $rawDataset 'split_manifest.json') `
 D:\MLQuizWork\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The historical pre-launch gate had **46 passing tests**. After final integration,
-the expanded repository suite completed with **193 passed** and four third-party
-`batchgenerators` deprecation warnings. Ruff, PowerShell parser, dependency, and
-Git-diff checks were also clean. The tested source and generated-result snapshot
-is commit `41ab3abc6227e6eb070958a22e61eb76dd5d2254`. The exact CLI smoke and
-guarded benchmark were:
+The historical pre-launch gate had **46 passing tests**. After v5 delivery and
+recovery integration, the expanded repository suite completed with **at least
+416 passed**; third-party `batchgenerators` deprecation warnings do not indicate
+test failures. Ruff, PowerShell parser, dependency, and Git-diff checks were
+also clean. The exact historical CLI smoke and guarded benchmark were:
 
 ```powershell
 # Run after the process-scoped environment setup above.
@@ -251,7 +267,13 @@ and the activated `checkpoint_classification_rescue`. All used identical
 predeclared equal-weight mean of whole-pancreas Dice, lesion Dice, and macro-F1,
 with score `0.6679416738149421`. Its checkpoint SHA-256 is
 `d7248e8903fd1f062687ae33a22ad0374ca1b9927445443dcde55dcde128d116`.
-The commands below document the reproducible lower-level workflow.
+That is the immutable historical baseline, not the final classifier-selection
+result. Afterward, v5 compared exactly two locked neural case heads using only
+training-case features for head development. The two-query cross-attention MIL
+head won all three repeated five-fold OOF comparisons and then passed the one
+allowed official replacement gate with macro-F1 `0.5254150702`, strictly above
+the baseline `0.4639934052`. The commands below document the reproducible
+historical lower-level workflow.
 
 ```powershell
 $model = 'D:\MLQuizWork\nnUNet_results\Dataset501_PancreasMultitask\nnUNetTrainerPancreasMultiTask__nnUNetResEncUNetMPlans__3d_fullres'
@@ -317,32 +339,47 @@ if ($activation.activation_approved) {
 Do not run both evaluation commands: either invocation performs the single
 equal-score selection pass over its complete three- or four-candidate set.
 
+The locked v5 inference itself completed all 36 cases once. On this host,
+Windows PowerShell 5.1 then rejected two collection-count expressions in the
+post-inference audit before either reference path was tested or opened. The
+39 inference artifacts had already been written and were hash-frozen. Rather
+than rerun inference, a prospectively locked saved-output continuation applied
+exactly two in-memory PowerShell compatibility substitutions, revalidated the
+unchanged outputs, and invoked the unchanged evaluator once. The recovery
+performed zero inference calls. The realized entry point was
+`scripts/Run-V5OfficialEvaluationRecovery.ps1`; its one-use recovery and
+official-evaluation ledgers are already consumed and must not be rerun.
+
 The evaluator reports unweighted case-level mean/std and bootstrap confidence intervals for whole-pancreas Dice (`label > 0`) and lesion Dice (`label == 2`), plus a fixed three-class confusion matrix, per-class precision/recall/F1, accuracy, and macro-F1. Empty reference and prediction receives Dice 1; a one-sided empty set receives 0. Confusion-matrix rows are references and columns are predictions.
 
 ## Test package
 
 The required ZIP root contains exactly 72 masks named like `quiz_037.nii.gz`
-and `subtype_results.csv` with the exact header `Names,Subtype`. The guarded
-selected-checkpoint path completed one fresh 72-case test inference in
-`248.11512969993055` seconds total (`3.446043468054591` seconds/case), with
-2,173.27 MiB peak CUDA allocation and 2,492 MiB peak reservation. The resulting
-flat ZIP contains exactly 73 root files (72 masks plus the CSV), is 783,389
+and `subtype_results.csv` with the exact header `Names,Subtype`. After the
+official replacement gate selected v5, the Windows PowerShell 5.1-compatible
+guarded path completed one fresh 72-case test inference in
+`268.76351469999645` seconds (`3.7328265930555062` seconds/case), with
+1,474.57 MiB peak CUDA allocation and 2,010 MiB peak reservation. The resulting
+flat ZIP contains exactly 73 root files (72 masks plus the CSV), is 783,546
 bytes, and has SHA-256
-`5de55f4ccc1eea78ef8974d0f362039523404a1d6315d06d0ec41ec8f0d08391`.
+`34afe1d74b70a24facceee890c03919bc5dbe036383206079fe221aa34ddd444`.
 Both the prediction directory and committed archive passed the strict validator;
-an additional source-test-to-archive audit independently confirmed all 72 names,
-readable integer masks, `{0,1,2}` labels, geometry, CSV rows, and subtypes with
-zero issues. The reproducible guarded entry point is:
+an additional source-test-to-archive audit confirmed all 72 names, readable
+integer masks, `{0,1,2}` labels, geometry, CSV rows, and subtype values with
+zero issues. The realized guarded entry point was:
 
 ```powershell
-.\scripts\Run-SelectedTestAndPackage.ps1 -WorkRoot D:\MLQuizWork
+# One-use final path; its ledger is already consumed.
+.\scripts\Run-V5LockedSelectedTestAndPackagePS51.ps1 @lockedSelectedTestArguments
 ```
 
-It verifies the activation/rescue and four-candidate selection provenance,
-rehashes the selected checkpoint before and after one fresh test inference,
-keeps probability/runtime evidence outside the strict prediction directory,
-packages the result, and independently validates the ZIP against the untouched
-supplied test folder.
+Here `@lockedSelectedTestArguments` denotes the hash-bound arguments from the
+prospective PowerShell 5.1 compatibility protocol, final-candidate lock, and
+official gate; it is documentation of the realized entry point, not permission
+for a second run. The wrapper rehashes every bound implementation, model, and
+gate artifact, keeps probability/runtime evidence outside the strict prediction
+directory, packages the result, and validates the ZIP against the supplied test
+folder.
 
 The lower-level guarded packager validates an already completed prediction
 directory, creates an explicit
@@ -372,25 +409,36 @@ The target decision uses the unrounded point estimate. Dice dispersion is the
 sample standard deviation across 36 cases; intervals are deterministic
 2,000-sample case-bootstrap percentile 95% confidence intervals.
 
-| Metric | Undergraduate target | Measured fixed-validation result | Decision |
-|---|---:|---:|---:|
-| Whole-pancreas Dice | >= 0.90 | mean `0.9201588643239327`, SD `0.03578438909583714`, CI `[0.9078962203213721, 0.9308140253653576]` | **Met** |
-| Lesion Dice | >= 0.27 | mean `0.6196727519510179`, SD `0.3206719417556869`, CI `[0.5148320705748086, 0.7165657179330268]` | **Met** |
-| Three-class macro-F1 | >= 0.60 | `0.46399340516987575`, CI `[0.2795513293036513, 0.6314441497200117]` | **Not met** |
+| Metric | Undergraduate target | Higher-tier target | Locked v5 result | Decision |
+|---|---:|---:|---:|---:|
+| Whole-pancreas Dice | >= 0.90 | >= 0.91 | mean `0.9201611779`, SD `0.0357812215`, CI `[0.9078978688, 0.9308171263]` | **Both met** |
+| Lesion Dice | >= 0.27 | >= 0.31 | mean `0.6196623933`, SD `0.3206780089`, CI `[0.5148076710, 0.7165386879]` | **Both met** |
+| Three-class macro-F1 | >= 0.60 | >= 0.70 | `0.5254150702`, CI `[0.3583611739, 0.6735718120]` | **Neither met** |
 
-Classification accuracy was `0.5` (95% CI `[0.3333333333333333,
-0.6666666666666666]`), macro precision `0.5148148148148147`, and macro recall
-`0.47592592592592586`. With rows as references and columns as predictions, the
-fixed-class confusion matrix was `[[4, 5, 0], [2, 11, 2], [3, 6, 3]]`.
-Per-class precision/recall/F1 for subtypes 0, 1, and 2 were respectively
-`0.4444444444444444/0.4444444444444444/0.4444444444444444`,
-`0.5/0.7333333333333333/0.5945945945945945`, and
-`0.6/0.25/0.35294117647058826`. The classification target is therefore reported
-as a miss rather than inferred from the confidence interval, while both
-segmentation targets are exceeded.
+Classification accuracy was `0.5277777778` (95% CI
+`[0.3611111111, 0.6944444444]`), macro precision `0.5283224401`, and macro
+recall `0.5462962963`. With rows as references and columns as predictions, the
+confusion matrix was `[[5, 2, 2], [4, 5, 6], [0, 3, 9]]`. Per-class
+precision/recall/F1 for subtypes 0, 1, and 2 were respectively
+`0.5555555556/0.5555555556/0.5555555556`,
+`0.5/0.3333333333/0.4`, and
+`0.5294117647/0.75/0.6206896552`. Subtype-1 recall was only
+`0.3333333333`. The official macro-F1 improved strictly over
+the immutable baseline (`0.5254150702 > 0.4639934052`), so the locked
+replacement gate selected v5. It still missed both requested classification
+thresholds; no model-level claim is inferred from the confidence interval.
+
+The separate strict all-72 speed benchmark used ABBA order with two complete
+process runs per arm. Installed stock nnU-Net averaged `236.7340` seconds and
+the selected candidate averaged `281.2425` seconds. The reported runtime
+reduction was `-18.8011%`: the candidate was 18.8011% slower, so the required
+`>=10%` speedup was rejected. The output-equivalence audit nevertheless passed:
+all compared masks matched exactly in label values, geometry, and dtype. This
+is a valid negative speed result on the measured RTX 4060 Laptop GPU, not a
+hardware-general performance claim.
 
 The intended offline run was synchronized once, verified at the exact remote
-run ID, and then received only the independently evaluated sanitized aggregate
+run ID, and then received only the artifact-evaluated sanitized aggregate
 summary. The first invocation below remains a local validation-only dry run;
 the second performs the idempotent publication.
 
@@ -432,12 +480,18 @@ The post-publication sanitized evidence export used a new destination:
   --output-dir 'D:\MLQuizWork\evaluation\wandb_evidence_final_20260806_0345'
 ```
 
-The [public W&B run](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx)
+The [public baseline W&B run](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx)
 is `finished`. Its canonical history has exactly 200 unique rows at steps 0--199
 with no missing or duplicate step. The sanitized `full_volume/*` summary records
 36 cases, four candidates, the selected rescue checkpoint and SHA-256, selection
-score, and the three aggregate task metrics above. No case ID, local path,
+score, and the historical baseline metrics `0.92015886/0.61967275/0.46399341`.
+No case ID, local path,
 prediction, rescue pseudo-epoch, or private file was uploaded.
+
+The separate [v5 train-only head run](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/u03yz7ds)
+records both locked neural candidates, all repeat/fold trajectories, refit
+markers, and train-only OOF summaries. Its OOF values are development evidence,
+not substitutes for the official 36-case metrics reported above.
 
 ## AI workflow and attribution
 
@@ -459,7 +513,10 @@ validation. See
 
 This is an evaluation prototype on de-identified cropped CT regions, not a
 clinical device. A single small held-out split cannot establish external
-validity across institutions, scanners, or acquisition protocols. Repository
+validity across institutions, scanners, or acquisition protocols. The v5 OOF
+comparison is not an unbiased end-to-end estimate because the shared encoder
+had seen all training labels; its refit-to-OOF macro-F1 gap also shows severe
+overfitting. The official macro-F1 and runtime gates were missed. Repository
 code and documentation are licensed under the [Apache License 2.0](LICENSE);
 the assessment data are excluded and are not redistributed under that license.
 
