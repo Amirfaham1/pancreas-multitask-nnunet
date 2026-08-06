@@ -1,0 +1,45 @@
+{
+  "schema_version": 3,
+  "lock_status": "frozen_before_inference_matched_encoder_feature_extraction_or_candidate_cv",
+  "locked_at_utc": "2026-08-06T14:16:28.8949353Z",
+  "inherits": {
+    "path": "configs/phd_classification_upgrade_lock_v2.json",
+    "git_commit": "846593a318b561e47f517625d02b80623600d269",
+    "sha256": "2826d9ffabf14bf41ffcd616c6d88ff15a502ad8eeecaa8f8019f01c8ff0a94d",
+    "merge_rule": "recursively_merge_overrides_below_into_the_complete_v2_lock"
+  },
+  "amendment_timing_and_reason": {
+    "official_validation_access_since_v2": false,
+    "inference_matched_encoder_features_extracted_since_v2": false,
+    "candidate_cross_validation_run_since_v2": false,
+    "reason": "Prospective compliance review requires the case classifier to refine, rather than bypass, the trained neural classification output. The frozen rescue head's logits and probabilities add complementary learned evidence at negligible inference cost."
+  },
+  "overrides": {
+    "frozen_network": {
+      "classification_pool_and_head_trainable": false,
+      "classification_pool_and_head_component_sha256": "1c6378fe0a2f8e792b183c8b0333b164bf2d67951147c96fadae390bd7cc6df8"
+    },
+    "feature_extraction": {
+      "per_tile_frozen_neural_head_evidence": [
+        "mirror_mean_rescue_logit_class_0",
+        "mirror_mean_rescue_logit_class_1",
+        "mirror_mean_rescue_logit_class_2",
+        "mirror_mean_rescue_probability_class_0",
+        "mirror_mean_rescue_probability_class_1",
+        "mirror_mean_rescue_probability_class_2"
+      ],
+      "case_frozen_neural_head_aggregates": [
+        "uniform_tile_mean_of_each_logit_and_probability",
+        "predicted_lesion_mass_weighted_tile_mean_of_each_logit_and_probability",
+        "mean_over_up_to_three_highest_predicted_lesion_mass_tiles_of_each_logit_and_probability",
+        "tile_population_standard_deviation_of_each_logit_and_probability",
+        "uniform_tile_mean_probability_is_exactly_the_existing_rescue_classifier_aggregation"
+      ],
+      "neural_head_inference_matching": "softmax_each_mirror_view_then_mean_probabilities_across_mirrors_and_tiles_in_float32; logits_are_meaned_across_mirrors_then_aggregated_with_the_same_tile_rules",
+      "feature_views": [
+        "multiscale_encoder_aggregates_plus_frozen_neural_head_plus_tile_evidence",
+        "multiscale_encoder_aggregates_plus_frozen_neural_head_plus_tile_evidence_plus_predicted_mask_ct_features"
+      ]
+    }
+  }
+}
