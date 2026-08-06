@@ -41,6 +41,7 @@ scripts/prepare_dataset.py         Audit and non-destructive nnU-Net conversion
 scripts/predict_joint.py           Raw-NIfTI segmentation/classification CLI
 scripts/evaluate_predictions.py    Fixed validation metrics and bootstrap CIs
 scripts/validate_submission.py     Strict 72-case directory/ZIP validator
+scripts/Package-Submission.ps1     Validate-first atomic delivery packager
 scripts/benchmark_training.py      Short CUDA timing/memory probe
 tests/                             Data, network, trainer, metric, inference tests
 report/report.md                   Artifact-driven technical-report source
@@ -134,7 +135,7 @@ D:\MLQuizWork\.venv\Scripts\python.exe -m pytest -q
 ```
 
 The historical pre-launch gate had **46 passing tests**; the current expanded
-suite has **74 passing tests**. The exact CLI smoke and guarded benchmark were:
+suite has **83 passing tests**. The exact CLI smoke and guarded benchmark were:
 
 ```powershell
 # Run after the process-scoped environment setup above.
@@ -245,6 +246,19 @@ The evaluator reports unweighted case-level mean/std and bootstrap confidence in
 ## Test package
 
 The required ZIP root contains exactly 72 masks named like `quiz_037.nii.gz` and `subtype_results.csv` with the exact header `Names,Subtype`. Before delivery, validate either the directory or ZIP against the supplied test images:
+
+The guarded packager validates the prediction directory, creates an explicit
+flat staged ZIP, validates the staged ZIP before committing it, validates the
+committed ZIP again, and records its SHA-256 and audit paths in an atomic JSON
+manifest. It refuses to replace an existing archive unless `-Force` is passed:
+
+```powershell
+.\scripts\Package-Submission.ps1
+# Deliberate replacement of that exact delivery ZIP only:
+.\scripts\Package-Submission.ps1 -Force
+```
+
+The underlying validator can also be run directly:
 
 ```powershell
 D:\MLQuizWork\.venv\Scripts\python.exe .\scripts\validate_submission.py `
