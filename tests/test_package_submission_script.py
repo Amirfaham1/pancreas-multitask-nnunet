@@ -234,7 +234,9 @@ def test_force_atomic_replacement_retries_a_transient_sharing_violation(
             if ([DateTime]::UtcNow -ge $deadline) { throw "Timed out waiting to release lock." }
             Start-Sleep -Milliseconds 10
         }
-        Start-Sleep -Milliseconds 350
+        # Hold beyond the former ~4.25-second retry ceiling so this test covers
+        # the long transient lock observed under a busy OneDrive test run.
+        Start-Sleep -Milliseconds 6000
     }
     finally {
         $stream.Dispose()
@@ -321,7 +323,7 @@ def test_force_atomic_replacement_retries_a_transient_sharing_violation(
             check=False,
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=30,
             env=commit_environment,
         )
     finally:
@@ -572,7 +574,7 @@ def test_package_script_builds_and_revalidates_exact_flat_archive(tmp_path: Path
         check=False,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=120,
     )
     assert forced.returncode == 0, forced.stderr + forced.stdout
     replacement_sha256 = hashlib.sha256(archive.read_bytes()).hexdigest()

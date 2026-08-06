@@ -266,7 +266,9 @@ function Commit-AtomicFile {
 
     $replacementSucceeded = $false
     $replaceAttempt = 0
-    $maximumReplaceAttempts = 12
+    # With the capped backoff below, 64 attempts allow approximately 30 seconds
+    # for an antivirus or cloud-sync reader to release delete sharing.
+    $maximumReplaceAttempts = 64
     try {
         while (-not $replacementSucceeded) {
             $replaceAttempt++
