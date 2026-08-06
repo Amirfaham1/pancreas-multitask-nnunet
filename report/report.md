@@ -590,6 +590,18 @@ nnUNetv2_train 501 3d_fullres 0 `
   -tr nnUNetTrainerPancreasMultiTask `
   -p nnUNetResEncUNetMPlans -device cuda
 
+# After checkpoint_final exists, bind the train-only rescue decision to it.
+python .\scripts\audit_classification_rescue_activation.py `
+  --checkpoint <TRAINED_MODEL_DIRECTORY>\fold_0\checkpoint_final.pth `
+  --output <TRAINED_MODEL_DIRECTORY>\fold_0\classification_rescue_activation.json
+
+# Take exactly one branch. Affirmative audit:
+.\scripts\Run-ClassificationRescue.ps1 -WorkRoot <WORK_ROOT>
+.\scripts\Run-FinalEvaluation.ps1 `
+  -WorkRoot <WORK_ROOT> -IncludeClassificationRescue
+# Negative audit instead:
+# .\scripts\Run-FinalEvaluation.ps1 -WorkRoot <WORK_ROOT>
+
 # Full-volume joint inference; run separately for validation and test inputs.
 python .\scripts\predict_joint.py `
   --input <RAW_INPUT_DIRECTORY> --output <PREDICTION_DIRECTORY> `

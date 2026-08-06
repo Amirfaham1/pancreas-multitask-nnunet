@@ -86,9 +86,10 @@ $activationPath = Join-Path $fold "classification_rescue_activation.json"
 $activation = Get-Content -LiteralPath $activationPath -Raw | ConvertFrom-Json
 if ($activation.activation_approved) {
   .\scripts\Run-ClassificationRescue.ps1
-  .\scripts\Run-FinalEvaluation.ps1 -IncludeClassificationRescue
+  .\scripts\Run-FinalEvaluation.ps1 `
+    -WorkRoot D:\MLQuizWork -IncludeClassificationRescue
 } else {
-  .\scripts\Run-FinalEvaluation.ps1
+  .\scripts\Run-FinalEvaluation.ps1 -WorkRoot D:\MLQuizWork
 }
 ```
 

@@ -26,6 +26,7 @@ post-training evaluation, not a training run.
 
 [CmdletBinding()]
 param(
+    [string] $WorkRoot = "D:\MLQuizWork",
     [ValidateSet("cuda", "cpu")]
     [string] $Device = "cuda",
     [switch] $ResultsOnCpu,
@@ -36,7 +37,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$workRoot = [IO.Path]::GetFullPath("D:\MLQuizWork")
+$workRoot = [IO.Path]::GetFullPath($WorkRoot)
 $datasetRoot = Join-Path $workRoot "nnUNet_raw\Dataset501_PancreasMultitask"
 $validationImages = Join-Path $datasetRoot "imagesVal"
 $validationLabels = Join-Path $datasetRoot "labelsVal"

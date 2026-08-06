@@ -53,6 +53,8 @@ def test_final_evaluation_script_parses_as_powershell_without_running_it() -> No
 def test_final_evaluation_script_declares_fixed_candidates_and_validation_inputs() -> None:
     source = SOURCE
 
+    assert '[string] $WorkRoot = "D:\\MLQuizWork"' in source
+    assert "$workRoot = [IO.Path]::GetFullPath($WorkRoot)" in source
     for checkpoint in (
         "checkpoint_best.pth",
         "checkpoint_best_multitask.pth",
