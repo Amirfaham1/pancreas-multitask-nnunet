@@ -101,12 +101,12 @@ def _bare_predictor(*, tile_count: int, extraction_mode: str) -> NeuralCaseNNUNe
 
 def _bag(extraction: object):
     return build_neural_case_bag(
-        tile_vectors=getattr(extraction, "tile_vectors"),
-        tile_evidence=getattr(extraction, "tile_evidence"),
-        tile_vector_names=getattr(extraction, "tile_vector_names"),
-        mil_stage3_maps=getattr(extraction, "mil_stage3_maps"),
-        mil_prediction_maps=getattr(extraction, "mil_prediction_maps"),
-        mil_lesion_mass=getattr(extraction, "mil_lesion_mass"),
+        tile_vectors=extraction.tile_vectors,
+        tile_evidence=extraction.tile_evidence,
+        tile_vector_names=extraction.tile_vector_names,
+        mil_stage3_maps=extraction.mil_stage3_maps,
+        mil_prediction_maps=extraction.mil_prediction_maps,
+        mil_lesion_mass=extraction.mil_lesion_mass,
     )
 
 
@@ -182,6 +182,8 @@ def test_pruned_extraction_matches_with_padding_overlap_and_gaussian() -> None:
     pruned_bag = _bag(pruned)
 
     assert full.segmentation_logits.shape == (3, 3, 3, 6)
+    assert full.segmentation_logits.dtype == torch.float16
+    assert pruned.segmentation_logits.dtype == torch.float16
     assert torch.equal(full.segmentation_logits, pruned.segmentation_logits)
     for name in ("stage3_maps", "prediction_maps", "lesion_mass", "all_tile_summary"):
         assert np.array_equal(getattr(full_bag, name), getattr(pruned_bag, name))
@@ -274,9 +276,15 @@ def test_constructor_rejects_wrong_schedule_mode_hash_or_bundle_path(
         )
 
 
-def test_inherited_raw_export_receives_segmentation_and_adjusted_probabilities(
+@pytest.mark.parametrize(
+    ("logit_dtype", "accepted"),
+    ((torch.float16, True), (torch.float32, False)),
+)
+def test_raw_export_requires_stock_float16_logits_and_adjusted_probabilities(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    logit_dtype: torch.dtype,
+    accepted: bool,
 ) -> None:
     import pancreas_multitask.neural_case_predictor as predictor_module
 
@@ -299,7 +307,7 @@ def test_inherited_raw_export_receives_segmentation_and_adjusted_probabilities(
     )
     predictor.dataset_json = {"file_ending": ".nii.gz", "channel_names": {"0": "CT"}}
     predictor.verbose_preprocessing = False
-    expected_logits = torch.arange(3 * 4 * 4 * 4, dtype=torch.float32).reshape(
+    expected_logits = torch.arange(3 * 4 * 4 * 4, dtype=logit_dtype).reshape(
         3, 4, 4, 4
     )
     adjusted = torch.tensor((0.1, 0.2, 0.7), dtype=torch.float64)
@@ -332,6 +340,19 @@ def test_inherited_raw_export_receives_segmentation_and_adjusted_probabilities(
     output_directory = tmp_path / "output"
     probability_csv = output_directory / "subtype_probabilities.csv"
 
+    if not accepted:
+        with pytest.raises(RuntimeError, match="stock float16 dtype"):
+            predictor.predict_from_files_joint(
+                input_directory,
+                output_directory,
+                probability_csv=probability_csv,
+                overwrite=True,
+            )
+        assert predictor.inference_runtime_provenance()[
+            "segmentation_export_logit_dtype_sequence"
+        ] == []
+        return
+
     results = predictor.predict_from_files_joint(
         input_directory,
         output_directory,
@@ -343,6 +364,9 @@ def test_inherited_raw_export_receives_segmentation_and_adjusted_probabilities(
     assert exported["properties"] == {"geometry": "kept"}
     assert results[0].subtype == 2
     assert results[0].classification_probabilities == pytest.approx((0.1, 0.2, 0.7))
+    execution = predictor.inference_runtime_provenance()
+    assert execution["segmentation_export_logit_dtype"] == "torch.float16"
+    assert execution["segmentation_export_logit_dtype_sequence"] == ["torch.float16"]
     with probability_csv.open("r", encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
     assert rows[0]["Names"] == "case.nii.gz"
@@ -374,7 +398,7 @@ def test_raw_export_preserves_float64_offset_decision_for_near_tie(
     predictor.dataset_json = {"file_ending": ".nii.gz", "channel_names": {"0": "CT"}}
     predictor.plans_manager = object()
     predictor.verbose_preprocessing = False
-    logits = torch.zeros((3, 4, 4, 4), dtype=torch.float32)
+    logits = torch.zeros((3, 4, 4, 4), dtype=torch.float16)
     adjusted = torch.tensor(
         (0.49999999995, 0.50000000005, 0.0),
         dtype=torch.float64,

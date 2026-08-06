@@ -52,6 +52,7 @@ V5_OFFSET_GRID = frozenset((-1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0)
 V5_IMPLEMENTATION_FILES = {
     "scripts/predict_joint.py",
     "src/pancreas_multitask/classification_rescue.py",
+    "src/pancreas_multitask/inference_determinism.py",
     "src/pancreas_multitask/network.py",
     "src/pancreas_multitask/predictor.py",
     "src/pancreas_multitask/case_features.py",
@@ -60,6 +61,26 @@ V5_IMPLEMENTATION_FILES = {
     "src/pancreas_multitask/neural_case_bundle.py",
     "src/pancreas_multitask/neural_case_training.py",
     "src/pancreas_multitask/neural_case_predictor.py",
+}
+
+DETERMINISTIC_INFERENCE_POLICY = "strict_cuda_inference_v1"
+DETERMINISM_CONFORMANCE_LOCK_SHA256 = (
+    "33b5aed4027651f999875e2340a65173c620c5673f845a186115cd3a7adb1ddd"
+)
+NNUNET_PREDICT_SOURCE_SHA256 = (
+    "c350e3202a7a67c3aef12e9206a744add442110ff8a4377c1f9640104b20a31f"
+)
+STOCK_EXPORT_CONFORMANCE_LOCK_SHA256 = (
+    "bf309ae1ff8475b0985089ac1db2ef6b35383be34d7eeda0e9c6e63478f19503"
+)
+DETERMINISTIC_INFERENCE_SNAPSHOT = {
+    "torch_deterministic_algorithms": True,
+    "cudnn_benchmark": False,
+    "cudnn_deterministic": True,
+    "cuda_matmul_tf32": False,
+    "cudnn_tf32": False,
+    "cublas_workspace_config": ":4096:8",
+    "nnunet_compile": "false",
 }
 
 
@@ -120,6 +141,90 @@ def _is_sha256(value: object) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(
         character in "0123456789abcdef" for character in value
     )
+
+
+def _validate_deterministic_execution(payload: dict[str, Any]) -> None:
+    """Require the disclosed post-lock, symmetric CUDA determinism repair."""
+
+    execution = payload.get("deterministic_execution")
+    if not isinstance(execution, dict):
+        raise BenchmarkError("Runtime lacks deterministic_execution provenance")
+    if execution.get("policy") != DETERMINISTIC_INFERENCE_POLICY:
+        raise BenchmarkError("Runtime used an unexpected deterministic inference policy")
+    if execution.get("configured_before_cuda_initialization") is not True:
+        raise BenchmarkError("Determinism was not configured before CUDA initialization")
+    if execution.get("settings_unchanged") is not True:
+        raise BenchmarkError("Deterministic inference settings changed during the run")
+    if execution.get("autocast_cuda_float16") is not True:
+        raise BenchmarkError("Runtime does not disclose CUDA float16 autocast execution")
+    conformance_lock = execution.get("conformance_lock")
+    if (
+        not isinstance(conformance_lock, dict)
+        or not isinstance(conformance_lock.get("path"), str)
+        or not conformance_lock["path"]
+        or conformance_lock.get("sha256") != DETERMINISM_CONFORMANCE_LOCK_SHA256
+        or conformance_lock.get("unchanged_during_run") is not True
+    ):
+        raise BenchmarkError("Runtime does not bind the exact determinism conformance lock")
+    installed_source = execution.get("installed_nnunet_source")
+    if not isinstance(installed_source, dict):
+        raise BenchmarkError("Runtime lacks installed nnUNet prediction-source provenance")
+    source_before = installed_source.get("before")
+    source_after = installed_source.get("after")
+    if (
+        installed_source.get("unchanged_during_run") is not True
+        or not isinstance(source_before, dict)
+        or source_before != source_after
+        or not isinstance(source_before.get("path"), str)
+        or not source_before["path"]
+        or source_before.get("sha256") != NNUNET_PREDICT_SOURCE_SHA256
+        or isinstance(source_before.get("size_bytes"), bool)
+        or not isinstance(source_before.get("size_bytes"), int)
+        or source_before["size_bytes"] < 1
+    ):
+        raise BenchmarkError("Installed nnUNet prediction source changed or is not locked")
+    for stage in (
+        "after_initial_configuration",
+        "after_predictor_construction",
+        "after_inference",
+    ):
+        if execution.get(stage) != DETERMINISTIC_INFERENCE_SNAPSHOT:
+            raise BenchmarkError(
+                f"Deterministic inference settings are invalid at {stage}"
+            )
+
+
+def _validate_stock_export_conformance(
+    payload: dict[str, Any], *, case_count: int
+) -> None:
+    conformance = payload.get("stock_export_conformance")
+    if not isinstance(conformance, dict):
+        raise BenchmarkError("Runtime lacks stock export-dtype conformance")
+    if (
+        conformance.get("export_logit_dtype") != "torch.float16"
+        or conformance.get("case_count_verified") != case_count
+        or conformance.get("all_case_exports_verified") is not True
+    ):
+        raise BenchmarkError("Runtime did not verify stock float16 export logits")
+    lock = conformance.get("conformance_lock")
+    if (
+        not isinstance(lock, dict)
+        or not isinstance(lock.get("path"), str)
+        or not lock["path"]
+        or lock.get("sha256") != STOCK_EXPORT_CONFORMANCE_LOCK_SHA256
+        or isinstance(lock.get("size_bytes"), bool)
+        or not isinstance(lock.get("size_bytes"), int)
+        or lock["size_bytes"] < 1
+        or lock.get("unchanged_during_run") is not True
+    ):
+        raise BenchmarkError("Runtime does not bind the stock export conformance lock")
+    execution = _execution(payload)
+    if (
+        execution.get("segmentation_export_logit_dtype") != "torch.float16"
+        or execution.get("segmentation_export_logit_dtype_sequence")
+        != ["torch.float16"] * case_count
+    ):
+        raise BenchmarkError("Not every case reached export with float16 logits")
 
 
 def _case_ids_sha256(case_ids: list[str]) -> str:
@@ -283,6 +388,7 @@ def _validate_runtime(
     expected_tta_batch_size: int,
     expected_extraction_mode: str,
 ) -> None:
+    _validate_deterministic_execution(payload)
     case_count = payload.get("case_count")
     case_ids = payload.get("case_ids")
     if isinstance(case_count, bool) or not isinstance(case_count, int) or case_count < 1:
@@ -296,6 +402,7 @@ def _validate_runtime(
         raise BenchmarkError("case_ids must be a sorted unique list matching case_count")
     if payload.get("case_ids_sha256") != _case_ids_sha256(case_ids):
         raise BenchmarkError("case_ids_sha256 does not match the ordered case IDs")
+    _validate_stock_export_conformance(payload, case_count=case_count)
     input_manifest = payload.get("input_file_manifest")
     expected_input_names = [f"{case_id}_0000.nii.gz" for case_id in case_ids]
     if (
@@ -424,6 +531,7 @@ MATCHED_RUNTIME_FIELDS = (
     "device",
     "device_capability",
     "device_name",
+    "deterministic_execution",
     "folds",
     "feature_cache_policy",
     "frozen_network",
@@ -436,6 +544,7 @@ MATCHED_RUNTIME_FIELDS = (
     "model_directory",
     "python_version",
     "neural_case_head_bundle",
+    "stock_export_conformance",
     "tile_step_size",
     "timing_scope",
     "torch_version",

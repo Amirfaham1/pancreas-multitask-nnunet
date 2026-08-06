@@ -21,6 +21,45 @@ CASE_IDS = ["case_a", "case_b"]
 BAG_HASHES = ["1" * 64, "2" * 64]
 
 
+def _deterministic_execution() -> dict[str, object]:
+    snapshot = {
+        "torch_deterministic_algorithms": True,
+        "cudnn_benchmark": False,
+        "cudnn_deterministic": True,
+        "cuda_matmul_tf32": False,
+        "cudnn_tf32": False,
+        "cublas_workspace_config": ":4096:8",
+        "nnunet_compile": "false",
+    }
+    return {
+        "policy": "strict_cuda_inference_v1",
+        "configured_before_cuda_initialization": True,
+        "autocast_cuda_float16": True,
+        "conformance_lock": {
+            "path": "D:/locked/inference_determinism_conformance_v1.json",
+            "sha256": "33b5aed4027651f999875e2340a65173c620c5673f845a186115cd3a7adb1ddd",
+            "unchanged_during_run": True,
+        },
+        "installed_nnunet_source": {
+            "before": {
+                "path": "D:/locked/nnunetv2/inference/predict_from_raw_data.py",
+                "sha256": "c350e3202a7a67c3aef12e9206a744add442110ff8a4377c1f9640104b20a31f",
+                "size_bytes": 51_234,
+            },
+            "after": {
+                "path": "D:/locked/nnunetv2/inference/predict_from_raw_data.py",
+                "sha256": "c350e3202a7a67c3aef12e9206a744add442110ff8a4377c1f9640104b20a31f",
+                "size_bytes": 51_234,
+            },
+            "unchanged_during_run": True,
+        },
+        "after_initial_configuration": deepcopy(snapshot),
+        "after_predictor_construction": deepcopy(snapshot),
+        "after_inference": deepcopy(snapshot),
+        "settings_unchanged": True,
+    }
+
+
 def _load_module():
     path = ROOT / "scripts" / "benchmark_inference_speed.py"
     spec = importlib.util.spec_from_file_location("benchmark_inference_speed", path)
@@ -115,6 +154,10 @@ def _runtime(
         "v5_feature_cache_reads": 0,
         "case_identifiers_or_paths_used_as_model_inputs": False,
         "v5_neural_bag_sha256_sequence": list(BAG_HASHES),
+        "segmentation_export_logit_dtype": "torch.float16",
+        "segmentation_export_logit_dtype_sequence": [
+            "torch.float16"
+        ] * len(CASE_IDS),
     }
     return {
         "case_count": len(CASE_IDS),
@@ -138,6 +181,7 @@ def _runtime(
         "device": "cuda",
         "device_capability": [7, 5],
         "device_name": "Tesla T4",
+        "deterministic_execution": _deterministic_execution(),
         "folds": [0],
         "feature_cache_policy": "disabled_online_fresh_extraction",
         "frozen_network": _frozen_network_provenance(),
@@ -172,6 +216,17 @@ def _runtime(
         "process_id": process_id,
         "python_version": "3.12.10",
         "started_at_utc": started_at,
+        "stock_export_conformance": {
+            "export_logit_dtype": "torch.float16",
+            "case_count_verified": len(CASE_IDS),
+            "all_case_exports_verified": True,
+            "conformance_lock": {
+                "path": "D:/locked/inference_stock_export_conformance_v1.json",
+                "sha256": "bf309ae1ff8475b0985089ac1db2ef6b35383be34d7eeda0e9c6e63478f19503",
+                "size_bytes": 5_595,
+                "unchanged_during_run": True,
+            },
+        },
         "tile_step_size": 0.5,
         "timing_scope": TIMING_SCOPE,
         "total_seconds": len(CASE_IDS) * seconds_per_case,
@@ -181,6 +236,7 @@ def _runtime(
         "v5_implementation_files": {
             "scripts/predict_joint.py": "e" * 64,
             "src/pancreas_multitask/classification_rescue.py": "d" * 64,
+            "src/pancreas_multitask/inference_determinism.py": "5" * 64,
             "src/pancreas_multitask/network.py": "f" * 64,
             "src/pancreas_multitask/predictor.py": "a" * 64,
             "src/pancreas_multitask/case_features.py": "b" * 64,
@@ -404,6 +460,59 @@ def test_mismatched_exact_neural_bag_hash_sequence_is_rejected(tmp_path: Path) -
     _mutate_runtime(paths[1][0], mutation)
 
     with pytest.raises(module.BenchmarkError, match="v5_neural_bag_sha256_sequence"):
+        module.audit_benchmark(*paths, expected_case_count=2)
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("cudnn_benchmark", True),
+        ("cudnn_deterministic", False),
+        ("cuda_matmul_tf32", True),
+        ("cublas_workspace_config", ":16:8"),
+    ),
+)
+def test_deterministic_execution_is_required_at_every_stage(
+    tmp_path: Path, field: str, replacement: object
+) -> None:
+    module = _load_module()
+    paths = _fixture(tmp_path)
+
+    def mutation(payload):
+        payload["deterministic_execution"]["after_predictor_construction"][
+            field
+        ] = replacement
+
+    _mutate_runtime(paths[1][0], mutation)
+
+    with pytest.raises(module.BenchmarkError, match="after_predictor_construction"):
+        module.audit_benchmark(*paths, expected_case_count=2)
+
+
+@pytest.mark.parametrize("tamper", ("dtype", "sequence", "lock"))
+def test_stock_float16_export_conformance_is_fail_closed(
+    tmp_path: Path, tamper: str
+) -> None:
+    module = _load_module()
+    paths = _fixture(tmp_path)
+
+    def mutation(payload):
+        if tamper == "dtype":
+            payload["stock_export_conformance"]["export_logit_dtype"] = (
+                "torch.float32"
+            )
+        elif tamper == "sequence":
+            payload["inference_execution"][
+                "segmentation_export_logit_dtype_sequence"
+            ][0] = "torch.float32"
+        else:
+            payload["stock_export_conformance"]["conformance_lock"][
+                "sha256"
+            ] = "0" * 64
+
+    _mutate_runtime(paths[1][0], mutation)
+
+    with pytest.raises(module.BenchmarkError, match="float16|export conformance"):
         module.audit_benchmark(*paths, expected_case_count=2)
 
 

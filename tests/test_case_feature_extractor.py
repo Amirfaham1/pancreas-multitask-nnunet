@@ -119,6 +119,8 @@ def test_case_extraction_is_tile_batch_invariant() -> None:
     batched = extract_case_from_preprocessed(predictor, image, tile_batch_size=2)
 
     assert torch.equal(sequential.segmentation_logits, batched.segmentation_logits)
+    assert sequential.segmentation_logits.dtype == torch.float16
+    assert batched.segmentation_logits.dtype == torch.float16
     assert np.array_equal(sequential.tile_vectors, batched.tile_vectors)
     assert np.array_equal(sequential.tile_evidence, batched.tile_evidence)
     assert np.array_equal(sequential.mil_stage3_maps, batched.mil_stage3_maps)

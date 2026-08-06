@@ -646,7 +646,7 @@ def extract_case_from_preprocessed(
     torch.div(predicted_logits, n_predictions, out=predicted_logits)
     if not torch.isfinite(predicted_logits).all():
         raise FloatingPointError("Non-finite stitched segmentation logits")
-    cropped = predicted_logits[(slice(None), *slicer_revert_padding[1:])].float().cpu()
+    cropped = predicted_logits[(slice(None), *slicer_revert_padding[1:])].cpu()
     tile_vectors = np.stack(vector_rows).astype(np.float32, copy=False)
     tile_evidence = np.stack(evidence_rows).astype(np.float32, copy=False)
     stage3_all = np.stack(mil_stage3_rows).astype(np.float16, copy=False)

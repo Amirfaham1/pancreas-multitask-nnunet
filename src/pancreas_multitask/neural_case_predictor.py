@@ -20,8 +20,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from acvl_utils.cropping_and_padding.padding import pad_nd_image
-from nnunetv2.inference.sliding_window_prediction import compute_gaussian
 from nnunetv2.inference.export_prediction import export_prediction_from_logits
+from nnunetv2.inference.sliding_window_prediction import compute_gaussian
 from nnunetv2.utilities.helpers import empty_cache
 from torch import Tensor, nn
 from torch._dynamo import OptimizedModule
@@ -371,7 +371,7 @@ def extract_neural_only_case_from_preprocessed(
     torch.div(predicted_logits, n_predictions, out=predicted_logits)
     if not torch.isfinite(predicted_logits).all():
         raise FloatingPointError("Non-finite stitched segmentation logits")
-    cropped = predicted_logits[(slice(None), *slicer_revert_padding[1:])].float().cpu()
+    cropped = predicted_logits[(slice(None), *slicer_revert_padding[1:])].cpu()
     tile_vectors = np.stack(vector_rows).astype(np.float32, copy=False)
     tile_evidence = np.stack(evidence_rows).astype(np.float32, copy=False)
     stage3_all = np.stack(mil_stage3_rows).astype(np.float16, copy=False)
@@ -454,6 +454,7 @@ class NeuralCaseNNUNetPredictor(JointNNUNetPredictor):
         self._v5_class_offset_applications = 0
         self._v5_feature_cache_reads = 0
         self._v5_neural_bag_sha256_sequence: list[str] = []
+        self._v5_export_logit_dtype_sequence: list[str] = []
 
     def initialize_from_trained_model_folder(
         self,
@@ -679,8 +680,14 @@ class NeuralCaseNNUNetPredictor(JointNNUNetPredictor):
 
                 output_base = output_directory / case_id
                 segmentation_path = Path(f"{output_base}{file_ending}")
+                export_logits = prediction.segmentation_logits.detach().cpu()
+                if export_logits.dtype != torch.float16:
+                    raise RuntimeError(
+                        "V5 segmentation export logits must retain stock float16 dtype"
+                    )
+                self._v5_export_logit_dtype_sequence.append(str(export_logits.dtype))
                 export_prediction_from_logits(
-                    prediction.segmentation_logits.detach().cpu(),
+                    export_logits,
                     properties,
                     self.configuration_manager,
                     self.plans_manager,
@@ -752,6 +759,15 @@ class NeuralCaseNNUNetPredictor(JointNNUNetPredictor):
                 "case_identifiers_or_paths_used_as_model_inputs": False,
                 "v5_neural_bag_sha256_sequence": list(
                     self._v5_neural_bag_sha256_sequence
+                ),
+                "segmentation_export_logit_dtype": (
+                    "torch.float16"
+                    if self._v5_export_logit_dtype_sequence
+                    and set(self._v5_export_logit_dtype_sequence) == {"torch.float16"}
+                    else None
+                ),
+                "segmentation_export_logit_dtype_sequence": list(
+                    self._v5_export_logit_dtype_sequence
                 ),
             }
         )
@@ -832,9 +848,9 @@ class NeuralCaseNNUNetPredictor(JointNNUNetPredictor):
 __all__ = [
     "LOCKED_BATCH_CONFIGURATIONS",
     "LOCKED_NETWORK_MICROBATCH_CEILING",
-    "NeuralCaseNNUNetPredictor",
     "V5_CLASSIFIER_PIPELINE",
     "V5_EXTRACTION_MODES",
+    "NeuralCaseNNUNetPredictor",
     "extract_neural_only_case_from_preprocessed",
     "mirror_mean_neural_only_tile_features",
 ]

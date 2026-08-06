@@ -205,6 +205,8 @@ def test_cpu_v5_run_times_head_load_and_writes_strict_provenance(
         def __init__(self, **kwargs: object) -> None:
             events.append("construct")
             initialized["constructor"] = kwargs
+            # Mirror nnUNetPredictor.__init__, which turns autotuning back on.
+            module.torch.backends.cudnn.benchmark = True
 
         def initialize_from_trained_model_folder(
             self,
@@ -258,6 +260,8 @@ def test_cpu_v5_run_times_head_load_and_writes_strict_provenance(
                 "v5_feature_cache_reads": 0,
                 "case_identifiers_or_paths_used_as_model_inputs": False,
                 "v5_neural_bag_sha256_sequence": [bag_sha256],
+                "segmentation_export_logit_dtype": "torch.float16",
+                "segmentation_export_logit_dtype_sequence": ["torch.float16"],
             }
 
         def neural_case_head_provenance(self) -> dict[str, object]:
@@ -396,6 +400,43 @@ def test_cpu_v5_run_times_head_load_and_writes_strict_provenance(
     assert artifact["model_configuration_unchanged_during_run"] is True
     assert artifact["neural_case_head_bundle"]["bundle_sha256"] == bundle_sha256
     assert artifact["frozen_network"]["component_hashes_before"] == component_hashes
+    deterministic = artifact["deterministic_execution"]
+    assert deterministic["policy"] == "strict_cuda_inference_v1"
+    assert deterministic["configured_before_cuda_initialization"] is True
+    assert deterministic["autocast_cuda_float16"] is False
+    assert deterministic["settings_unchanged"] is True
+    assert deterministic["conformance_lock"]["sha256"] == (
+        module.DETERMINISM_CONFORMANCE_LOCK_SHA256
+    )
+    assert deterministic["conformance_lock"]["unchanged_during_run"] is True
+    assert deterministic["installed_nnunet_source"]["before"] == (
+        deterministic["installed_nnunet_source"]["after"]
+    )
+    assert deterministic["installed_nnunet_source"]["before"]["sha256"] == (
+        module.NNUNET_PREDICT_SOURCE_SHA256
+    )
+    for stage in (
+        "after_initial_configuration",
+        "after_predictor_construction",
+        "after_inference",
+    ):
+        assert deterministic[stage] == {
+            "torch_deterministic_algorithms": True,
+            "cudnn_benchmark": False,
+            "cudnn_deterministic": True,
+            "cuda_matmul_tf32": False,
+            "cudnn_tf32": False,
+            "cublas_workspace_config": ":4096:8",
+            "nnunet_compile": "false",
+        }
+    export_conformance = artifact["stock_export_conformance"]
+    assert export_conformance["export_logit_dtype"] == "torch.float16"
+    assert export_conformance["case_count_verified"] == 1
+    assert export_conformance["all_case_exports_verified"] is True
+    assert export_conformance["conformance_lock"]["sha256"] == (
+        module.STOCK_EXPORT_CONFORMANCE_LOCK_SHA256
+    )
+    assert export_conformance["conformance_lock"]["unchanged_during_run"] is True
     assert artifact["timing_scope"] == (
         "fresh_process_model_and_v5_head_initialization_preprocessing_"
         "feature_extraction_neural_head_offsets_export"
@@ -403,6 +444,7 @@ def test_cpu_v5_run_times_head_load_and_writes_strict_provenance(
     assert set(artifact["v5_implementation_files"]) == {
         "scripts/predict_joint.py",
         "src/pancreas_multitask/classification_rescue.py",
+        "src/pancreas_multitask/inference_determinism.py",
         "src/pancreas_multitask/network.py",
         "src/pancreas_multitask/predictor.py",
         "src/pancreas_multitask/case_features.py",

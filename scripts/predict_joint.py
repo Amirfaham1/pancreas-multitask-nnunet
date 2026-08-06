@@ -20,15 +20,21 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from pancreas_multitask.neural_case_predictor import (
-    LOCKED_BATCH_CONFIGURATIONS,
-    NeuralCaseNNUNetPredictor,
-    V5_CLASSIFIER_PIPELINE,
+from pancreas_multitask.inference_determinism import (
+    assert_deterministic_inference,
+    configure_deterministic_inference,
+    deterministic_inference_snapshot,
+    reassert_deterministic_inference,
 )
 from pancreas_multitask.neural_case_head import (
     CHECKPOINT_SHA256,
     DATASET_JSON_SHA256,
     PLANS_SHA256,
+)
+from pancreas_multitask.neural_case_predictor import (
+    LOCKED_BATCH_CONFIGURATIONS,
+    V5_CLASSIFIER_PIPELINE,
+    NeuralCaseNNUNetPredictor,
 )
 from pancreas_multitask.predictor import JointNNUNetPredictor
 
@@ -39,9 +45,26 @@ V5_MODEL_CONFIGURATION_SHA256 = {
     "dataset.json": DATASET_JSON_SHA256,
     "plans.json": PLANS_SHA256,
 }
+DETERMINISTIC_INFERENCE_POLICY = "strict_cuda_inference_v1"
+DETERMINISM_CONFORMANCE_LOCK_PATH = (
+    ROOT / "configs" / "inference_determinism_conformance_v1.json"
+)
+DETERMINISM_CONFORMANCE_LOCK_SHA256 = (
+    "33b5aed4027651f999875e2340a65173c620c5673f845a186115cd3a7adb1ddd"
+)
+STOCK_EXPORT_CONFORMANCE_LOCK_PATH = (
+    ROOT / "configs" / "inference_stock_export_conformance_v1.json"
+)
+STOCK_EXPORT_CONFORMANCE_LOCK_SHA256 = (
+    "bf309ae1ff8475b0985089ac1db2ef6b35383be34d7eeda0e9c6e63478f19503"
+)
+NNUNET_PREDICT_SOURCE_SHA256 = (
+    "c350e3202a7a67c3aef12e9206a744add442110ff8a4377c1f9640104b20a31f"
+)
 V5_IMPLEMENTATION_RELATIVE_PATHS = (
     "scripts/predict_joint.py",
     "src/pancreas_multitask/classification_rescue.py",
+    "src/pancreas_multitask/inference_determinism.py",
     "src/pancreas_multitask/network.py",
     "src/pancreas_multitask/predictor.py",
     "src/pancreas_multitask/case_features.py",
@@ -105,6 +128,37 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _locked_file_provenance(
+    path: Path, *, expected_sha256: str, description: str
+) -> dict[str, object]:
+    """Bind an execution-policy dependency to an exact immutable file."""
+
+    resolved = path.expanduser().resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"{description} does not exist: {resolved}")
+    digest = _sha256(resolved)
+    if digest != expected_sha256:
+        raise ValueError(f"{description} differs from its locked SHA-256")
+    return {
+        "path": str(resolved),
+        "sha256": digest,
+        "size_bytes": resolved.stat().st_size,
+    }
+
+
+def _nnunet_predict_source_provenance() -> dict[str, object]:
+    """Hash the installed stock predictor source without modifying it."""
+
+    from nnunetv2.inference import predict_from_raw_data
+
+    source_path = Path(predict_from_raw_data.__file__).resolve()
+    return _locked_file_provenance(
+        source_path,
+        expected_sha256=NNUNET_PREDICT_SOURCE_SHA256,
+        description="Installed nnUNetv2 prediction source",
+    )
 
 
 def _checkpoint_provenance(
@@ -397,6 +451,24 @@ def run(args: argparse.Namespace) -> int:
     selected_folds = _selected_folds(args.folds)
     _validate_v5_arguments(args, selected_folds)
     device = torch.device(args.device)
+    deterministic_initial: dict[str, object] | None = None
+    deterministic_after_constructor: dict[str, object] | None = None
+    determinism_lock_before: dict[str, object] | None = None
+    stock_export_lock_before: dict[str, object] | None = None
+    nnunet_source_before: dict[str, object] | None = None
+    if args.classification_mode == "neural-v5":
+        determinism_lock_before = _locked_file_provenance(
+            DETERMINISM_CONFORMANCE_LOCK_PATH,
+            expected_sha256=DETERMINISM_CONFORMANCE_LOCK_SHA256,
+            description="Determinism conformance lock",
+        )
+        stock_export_lock_before = _locked_file_provenance(
+            STOCK_EXPORT_CONFORMANCE_LOCK_PATH,
+            expected_sha256=STOCK_EXPORT_CONFORMANCE_LOCK_SHA256,
+            description="Stock export-dtype conformance lock",
+        )
+        nnunet_source_before = _nnunet_predict_source_provenance()
+        deterministic_initial = configure_deterministic_inference(device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("--device cuda was requested, but CUDA is unavailable")
     if device.type == "mps" and not torch.backends.mps.is_available():
@@ -464,6 +536,10 @@ def run(args: argparse.Namespace) -> int:
         allow_tqdm=True,
         **predictor_arguments,
     )
+    if args.classification_mode == "neural-v5":
+        # nnUNetPredictor.__init__ enables cuDNN benchmarking for CUDA. Undo
+        # that upstream mutation before any model initialization or inference.
+        deterministic_after_constructor = reassert_deterministic_inference()
 
     if device.type == "cuda":
         torch.cuda.synchronize(device)
@@ -490,7 +566,30 @@ def run(args: argparse.Namespace) -> int:
         torch.cuda.synchronize(device)
     total_seconds = time.perf_counter() - started_at
 
+    deterministic_after_inference: dict[str, object] | None = None
+    determinism_lock_after: dict[str, object] | None = None
+    stock_export_lock_after: dict[str, object] | None = None
+    nnunet_source_after: dict[str, object] | None = None
     if isinstance(predictor, NeuralCaseNNUNetPredictor):
+        deterministic_after_inference = deterministic_inference_snapshot(device)
+        assert_deterministic_inference(deterministic_after_inference)
+        determinism_lock_after = _locked_file_provenance(
+            DETERMINISM_CONFORMANCE_LOCK_PATH,
+            expected_sha256=DETERMINISM_CONFORMANCE_LOCK_SHA256,
+            description="Determinism conformance lock",
+        )
+        stock_export_lock_after = _locked_file_provenance(
+            STOCK_EXPORT_CONFORMANCE_LOCK_PATH,
+            expected_sha256=STOCK_EXPORT_CONFORMANCE_LOCK_SHA256,
+            description="Stock export-dtype conformance lock",
+        )
+        nnunet_source_after = _nnunet_predict_source_provenance()
+        if determinism_lock_after != determinism_lock_before:
+            raise RuntimeError("Determinism conformance lock changed during inference")
+        if stock_export_lock_after != stock_export_lock_before:
+            raise RuntimeError("Stock export-dtype conformance lock changed during inference")
+        if nnunet_source_after != nnunet_source_before:
+            raise RuntimeError("Installed nnUNetv2 prediction source changed during inference")
         checkpoint_provenance_after = _checkpoint_provenance(
             model_directory,
             selected_folds,
@@ -571,14 +670,58 @@ def run(args: argparse.Namespace) -> int:
     }
     if isinstance(predictor, NeuralCaseNNUNetPredictor):
         if (
+            deterministic_initial is None
+            or deterministic_after_constructor is None
+            or deterministic_after_inference is None
+            or determinism_lock_before is None
+            or stock_export_lock_before is None
+            or nnunet_source_before is None
+        ):
+            raise RuntimeError("V5 deterministic inference provenance is incomplete")
+        if (
             inference_execution["v5_case_extractions_completed"] != case_count
             or inference_execution["v5_neural_head_forward_calls"] != case_count
             or inference_execution["v5_class_offset_applications"] != case_count
             or inference_execution["v5_feature_cache_reads"] != 0
+            or inference_execution["segmentation_export_logit_dtype"]
+            != "torch.float16"
+            or inference_execution["segmentation_export_logit_dtype_sequence"]
+            != ["torch.float16"] * case_count
         ):
             raise RuntimeError("Not every output case executed the complete fresh v5 path")
         runtime.update(
             {
+                "deterministic_execution": {
+                    "policy": DETERMINISTIC_INFERENCE_POLICY,
+                    "configured_before_cuda_initialization": True,
+                    "autocast_cuda_float16": device.type == "cuda",
+                    "after_initial_configuration": deterministic_initial,
+                    "after_predictor_construction": deterministic_after_constructor,
+                    "after_inference": deterministic_after_inference,
+                    "settings_unchanged": (
+                        deterministic_initial
+                        == deterministic_after_constructor
+                        == deterministic_after_inference
+                    ),
+                    "conformance_lock": {
+                        **determinism_lock_before,
+                        "unchanged_during_run": True,
+                    },
+                    "installed_nnunet_source": {
+                        "before": nnunet_source_before,
+                        "after": nnunet_source_after,
+                        "unchanged_during_run": True,
+                    },
+                },
+                "stock_export_conformance": {
+                    "export_logit_dtype": "torch.float16",
+                    "case_count_verified": case_count,
+                    "all_case_exports_verified": True,
+                    "conformance_lock": {
+                        **stock_export_lock_before,
+                        "unchanged_during_run": True,
+                    },
+                },
                 "neural_case_head_bundle": predictor.neural_case_head_provenance(),
                 "frozen_network": predictor.frozen_network_provenance(),
                 "model_configuration_files": model_configuration_provenance,

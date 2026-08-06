@@ -40,17 +40,51 @@ from pancreas_multitask.neural_case_training import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+POST_LOCK_INFERENCE_EXTRACTOR_SHA256 = (
+    "eef3eb3a8a530ea7dfa31e5eba438e8f32fae0053006ef0c44577b0230707926"
+)
+STOCK_EXPORT_CONFORMANCE_LOCK_SHA256 = (
+    "bf309ae1ff8475b0985089ac1db2ef6b35383be34d7eeda0e9c6e63478f19503"
+)
 
 
-def test_final_extractor_implementation_and_speed_lock_hashes_are_current() -> None:
+def test_historical_training_hash_and_locked_export_only_divergence_are_explicit() -> None:
+    """Keep training provenance immutable while binding current inference code.
+
+    The prospectively locked stock-export repair changed only the terminal
+    logit dtype passed to resampling. It did not change any cached neural-bag
+    value, so the fitted bundle must retain its historical extractor binding.
+    """
+
     script = ROOT / "scripts" / "extract_train_case_features.py"
     specification = importlib.util.spec_from_file_location("v5_extract_train_case_features", script)
     assert specification is not None and specification.loader is not None
     module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(module)
 
-    assert module._implementation_sha256() == EXTRACTOR_IMPLEMENTATION_SHA256
+    assert EXTRACTOR_IMPLEMENTATION_SHA256 == (
+        "68956b493c8004b86558841d830e633827f12b0c9a099d3d42f8ddab8de2c46f"
+    )
+    assert module._implementation_sha256() == POST_LOCK_INFERENCE_EXTRACTOR_SHA256
+    assert POST_LOCK_INFERENCE_EXTRACTOR_SHA256 != EXTRACTOR_IMPLEMENTATION_SHA256
     assert file_sha256(ROOT / "configs" / "inference_speed_benchmark.json") == SPEED_LOCK_SHA256
+    assert file_sha256(
+        ROOT / "configs" / "inference_stock_export_conformance_v1.json"
+    ) == STOCK_EXPORT_CONFORMANCE_LOCK_SHA256
+
+    predictor_script = ROOT / "scripts" / "predict_joint.py"
+    predictor_specification = importlib.util.spec_from_file_location(
+        "v5_predict_joint_manifest", predictor_script
+    )
+    assert predictor_specification is not None and predictor_specification.loader is not None
+    predictor_module = importlib.util.module_from_spec(predictor_specification)
+    predictor_specification.loader.exec_module(predictor_module)
+    assert "src/pancreas_multitask/case_feature_extractor.py" in (
+        predictor_module.V5_IMPLEMENTATION_RELATIVE_PATHS
+    )
+    assert predictor_module.STOCK_EXPORT_CONFORMANCE_LOCK_SHA256 == (
+        STOCK_EXPORT_CONFORMANCE_LOCK_SHA256
+    )
 
 
 def _synthetic_dataset(case_count: int = 9) -> NeuralBagDataset:
