@@ -150,6 +150,50 @@ def test_rescue_provenance_and_no_validation_use_are_checked_before_inference() 
     assert rescue_checks < inference_loop
 
 
+def test_rescue_full_frozen_protocol_and_split_manifest_are_fail_closed() -> None:
+    source = SOURCE
+
+    for field in (
+        "iterations_per_epoch",
+        "learning_rate",
+        "weight_decay",
+        "gradient_clip_norm",
+        "label_smoothing",
+        "nonlesion_patch_weight",
+        "reset_seed",
+        "optimizer",
+        "training_batch_size",
+        "training_class_counts",
+        "training_class_weights",
+        "training_updates_expected",
+        "classification_parameter_names",
+        "classification_trainable_parameter_count",
+        "training_case_count",
+        "validation_case_count",
+        "training_only_history",
+        "frozen_split_manifest_sha256",
+        "frozen_manifest_training_case_ids_sha256",
+        "frozen_manifest_validation_case_ids_sha256",
+        "matches_frozen_split_manifest",
+        "source_component_sha256",
+        "current_component_sha256",
+    ):
+        assert field in source
+
+    assert '"split_manifest.json"' in source
+    assert "$rawSplitManifestSha256" in source
+    assert "$preprocessedSplitManifestSha256" in source
+    assert "training_only_history must contain exactly 30 epochs" in source
+    assert "must account for exactly 125 x 2 samples" in source
+    assert "Rescue schedule must declare exactly 125 iterations per epoch" in source
+
+    protocol_check = source.index("$rescueSchedule = Get-RequiredJsonProperty")
+    split_binding_check = source.index("$rawSplitManifestSha256 = Get-FileSha256")
+    history_check = source.index("$trainingOnlyHistory = @(")
+    inference_loop = source.index('Write-Host "[$($candidate.Name)] Running fixed-validation')
+    assert protocol_check < split_binding_check < history_check < inference_loop
+
+
 def test_selection_is_one_equal_score_pass_over_the_final_candidate_array() -> None:
     source = SOURCE
 

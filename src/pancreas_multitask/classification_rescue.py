@@ -314,6 +314,79 @@ def validate_disjoint_split(
     }
 
 
+def validate_frozen_split_manifest(
+    manifest: Mapping[str, Any],
+    training_case_ids: Sequence[str],
+    validation_case_ids: Sequence[str],
+) -> dict[str, int | str | bool]:
+    """Bind the live nnU-Net split to the frozen pretraining manifest.
+
+    The source package's supplied train/validation roles are recorded before
+    training in ``split_manifest.json``. Cardinality and disjointness alone are
+    insufficient because a different 252/36 partition would still pass those
+    checks. This function therefore requires exact case membership and records
+    hashes for both the live split and the manifest lists.
+    """
+
+    if manifest.get("schema_version") != 1:
+        raise ValueError("Frozen split manifest has an unsupported schema_version")
+    if manifest.get("source_splits_preserved") is not True:
+        raise ValueError("Frozen split manifest does not preserve the supplied splits")
+
+    def case_list(name: str) -> list[str]:
+        raw_values = manifest.get(name)
+        if not isinstance(raw_values, list) or not all(
+            isinstance(value, str) for value in raw_values
+        ):
+            raise TypeError(f"Frozen split manifest field {name!r} must be a string list")
+        values = [str(value) for value in raw_values]
+        if len(values) != len(set(values)):
+            raise ValueError(f"Frozen split manifest field {name!r} contains duplicates")
+        return values
+
+    manifest_training = case_list("train_case_ids")
+    manifest_validation = case_list("validation_case_ids")
+    manifest_planning = case_list("planning_case_ids")
+    live_training = [str(case_id) for case_id in training_case_ids]
+    live_validation = [str(case_id) for case_id in validation_case_ids]
+
+    if set(manifest_training) & set(manifest_validation):
+        raise ValueError("Frozen split manifest training/validation lists overlap")
+    if sorted(manifest_planning) != sorted(manifest_training):
+        raise ValueError("Frozen split manifest planning cases differ from its training cases")
+    if sorted(live_training) != sorted(manifest_training):
+        missing = sorted(set(manifest_training) - set(live_training))
+        unexpected = sorted(set(live_training) - set(manifest_training))
+        raise ValueError(
+            "Live training split differs from frozen split manifest; "
+            f"missing={missing[:5]}, unexpected={unexpected[:5]}"
+        )
+    if sorted(live_validation) != sorted(manifest_validation):
+        missing = sorted(set(manifest_validation) - set(live_validation))
+        unexpected = sorted(set(live_validation) - set(manifest_validation))
+        raise ValueError(
+            "Live validation split differs from frozen split manifest; "
+            f"missing={missing[:5]}, unexpected={unexpected[:5]}"
+        )
+
+    training_hash = case_id_sha256(live_training)
+    validation_hash = case_id_sha256(live_validation)
+    manifest_training_hash = case_id_sha256(manifest_training)
+    manifest_validation_hash = case_id_sha256(manifest_validation)
+    if training_hash != manifest_training_hash or validation_hash != manifest_validation_hash:
+        raise RuntimeError("Frozen split manifest hash binding failed unexpectedly")
+
+    return {
+        "frozen_split_manifest_schema_version": 1,
+        "frozen_source_splits_preserved": True,
+        "frozen_manifest_training_case_count": len(manifest_training),
+        "frozen_manifest_training_case_ids_sha256": manifest_training_hash,
+        "frozen_manifest_validation_case_count": len(manifest_validation),
+        "frozen_manifest_validation_case_ids_sha256": manifest_validation_hash,
+        "matches_frozen_split_manifest": True,
+    }
+
+
 def _classification_loss(
     logits: Tensor,
     targets: Tensor,
@@ -523,6 +596,15 @@ def validate_resume_state(
         raise ValueError("A fully completed rescue checkpoint must have status='complete'")
     if not isinstance(state.get("current_component_sha256"), Mapping):
         raise TypeError("Resume checkpoint lacks component hashes")
+    started_at = state.get("started_at_utc")
+    if not isinstance(started_at, str) or not started_at.strip():
+        raise ValueError("Resume checkpoint lacks its original started_at_utc")
+    elapsed_seconds = float(state.get("elapsed_seconds", -1.0))
+    if not np.isfinite(elapsed_seconds) or elapsed_seconds < 0:
+        raise ValueError("Resume checkpoint has invalid cumulative elapsed_seconds")
+    resume_count = int(state.get("resume_count", -1))
+    if resume_count < 0:
+        raise ValueError("Resume checkpoint has invalid resume_count")
     return completed_epochs
 
 
@@ -590,5 +672,6 @@ __all__ = [
     "strict_load_network_weights",
     "validate_activation_audit",
     "validate_disjoint_split",
+    "validate_frozen_split_manifest",
     "validate_resume_state",
 ]

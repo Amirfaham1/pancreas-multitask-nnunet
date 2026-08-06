@@ -17,6 +17,16 @@ __pycache__/
 /artifacts/
 /outputs/
 /delivery/
+/evaluation/
+/evidence/
+/submission/
+/final_upload/
+/final_evidence/
+/logs/
+/smoke_results/
+/nnUNet_raw/
+/nnUNet_preprocessed/
+/nnUNet_results/
 /wandb/
 /.env
 *.pth

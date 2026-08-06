@@ -41,8 +41,9 @@ Primary reproducible commands are in `README.md`; the verified sequence was:
 3. prepare again with `--validation-layout imagesTr`;
 4. run `nnUNetv2_preprocess -d 501 -plans_name
    nnUNetResEncUNetMPlans -c 3d_fullres -np 2`; and
-5. copy only `splits_final.json` into the matching preprocessed dataset
-   directory; classification metadata remains under the raw dataset root.
+5. copy `splits_final.json` and its immutable `split_manifest.json` into the
+   matching preprocessed dataset directory; classification metadata remains
+   under the raw dataset root.
 
 The machine-readable evidence is `data_audit.json`, `split_manifest.json`,
 `classification_manifest.json`, and `classification_labels.json` in the
@@ -65,7 +66,8 @@ Status: **DONE**
 Status: **DONE**
 
 - Historical pre-launch gate: **46 passed** in the provisioned environment.
-- Current expanded repository suite: **92 passed**.
+- Current expanded repository suite: **175 passed**; the four warnings are
+  third-party `batchgenerators` deprecations.
 - The delivery packager is parser-tested and uses a validate-first atomic ZIP
   replacement; an existing valid archive remains untouched if staged ZIP
   validation fails.

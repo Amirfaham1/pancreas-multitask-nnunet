@@ -43,6 +43,7 @@ from pancreas_multitask.classification_rescue import (
     strict_load_network_weights,
     validate_activation_audit,
     validate_disjoint_split,
+    validate_frozen_split_manifest,
     validate_resume_state,
 )
 
@@ -219,6 +220,40 @@ def _optimizer_state_to_device(optimizer: torch.optim.Optimizer, device: torch.d
                 state[key] = value.to(device)
 
 
+def _frozen_split_manifest_binding(
+    trainer: Any,
+    training_keys: list[str],
+    validation_keys: list[str],
+) -> dict[str, Any]:
+    """Load one stable manifest snapshot and bind it to the live split."""
+
+    manifest_path = (
+        Path(trainer.preprocessed_dataset_folder_base) / "split_manifest.json"
+    ).resolve()
+    if not manifest_path.is_file():
+        raise FileNotFoundError(
+            f"Frozen pretraining split manifest does not exist: {manifest_path}"
+        )
+    hash_before = file_sha256(manifest_path)
+    with manifest_path.open("r", encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    hash_after = file_sha256(manifest_path)
+    if hash_before != hash_after:
+        raise RuntimeError("Frozen split manifest changed while it was being read")
+    if not isinstance(manifest, dict):
+        raise TypeError("Frozen split manifest must contain a JSON object")
+    binding = validate_frozen_split_manifest(
+        manifest,
+        training_keys,
+        validation_keys,
+    )
+    return {
+        **binding,
+        "frozen_split_manifest": str(manifest_path),
+        "frozen_split_manifest_sha256": hash_before,
+    }
+
+
 def _checkpoint_metadata(source_checkpoint: dict[str, Any]) -> dict[str, Any]:
     metadata = {
         key: source_checkpoint[key]
@@ -350,6 +385,10 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
         history: list[dict[str, Any]] = []
         resume_state: dict[str, Any] | None = None
         repair_completed_audit = False
+        original_started_at = started_at
+        prior_elapsed_seconds = 0.0
+        resume_count = 0
+        last_resume_started_at: str | None = None
         if args.resume:
             resume_checkpoint = torch.load(
                 output_path,
@@ -375,6 +414,12 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
                 raise ValueError("Resume decoder does not match the frozen source decoder")
             resume_state = raw_resume_state
             history = list(raw_resume_state.get("training_only_history", []))
+            original_started_at = str(raw_resume_state["started_at_utc"])
+            prior_elapsed_seconds = float(raw_resume_state["elapsed_seconds"])
+            resume_count = int(raw_resume_state["resume_count"])
+            if not repair_completed_audit:
+                resume_count += 1
+                last_resume_started_at = started_at
             del resume_checkpoint
         else:
             immutable_before_reset = component_hashes(model)
@@ -416,6 +461,13 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
             expected_training_cases=args.expected_training_cases,
             expected_validation_cases=args.expected_validation_cases,
         )
+        split_audit.update(
+            _frozen_split_manifest_binding(
+                trainer,
+                training_keys,
+                validation_keys,
+            )
+        )
         training_labels = resolve_case_labels(
             training_keys,
             trainer.classification_label_mapping,
@@ -435,7 +487,9 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
             "schema_version": RESCUE_SCHEMA_VERSION,
             "method": "post_training_frozen_backbone_classification_head_rescue",
             "status": "in_progress",
-            "started_at_utc": started_at,
+            "started_at_utc": original_started_at,
+            "resume_count": resume_count,
+            "last_resume_started_at_utc": last_resume_started_at,
             "source_checkpoint": str(source_path),
             "source_checkpoint_sha256": source_file_hash,
             "activation_audit": str(activation_audit_path),
@@ -446,11 +500,16 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
             "schedule": schedule.to_dict(),
             "optimizer": "AdamW",
             "device_type": device.type,
+            "wandb_enabled": False,
+            "early_stopping": False,
+            "maximum_attempts": 1,
+            "training_updates_expected": (schedule.epochs * schedule.iterations_per_epoch),
             "training_loader": "single_threaded_training_split_only",
             "training_batch_size": int(trainer.batch_size),
             "decoder_executed_during_rescue": False,
             "encoder_gradient_enabled": False,
             "decoder_gradient_enabled": False,
+            "validation_labels_indexed_for_targets": False,
             "classification_parameter_names": [name for name, _ in trainable_items],
             "classification_trainable_parameter_count": int(
                 sum(parameter.numel() for parameter in trainable_parameters)
@@ -552,7 +611,7 @@ def run(args: argparse.Namespace) -> tuple[Path, Path]:
                 "optimizer_state": optimizer.state_dict(),
                 "grad_scaler_state": scaler.state_dict() if scaler.is_enabled() else None,
                 "rng_state": capture_rng_state(include_cuda=device.type == "cuda"),
-                "elapsed_seconds": time.perf_counter() - wall_start,
+                "elapsed_seconds": prior_elapsed_seconds + (time.perf_counter() - wall_start),
             }
             latest_rescue_state = rescue_state
             output_checkpoint = build_inference_checkpoint(

@@ -256,7 +256,7 @@ The trainer does not use automated early stopping. Training can be manually term
 
 ## Development checks before the long run
 
-High-risk contracts were tested before expensive training: case-ID-to-subtype mapping, inverse-frequency weights, macro-F1, patch-evidence weighting, attention-head compatibility, network tensor shapes, gradient flow into the shared encoder, segmentation-only compatibility, mirror/tile/fold classification aggregation, atomic GPU-to-CPU inference retry, categorical mask repair, fixed-split generation, evaluation conventions, report-figure generation, complete-checkpoint selection, and final archive structure. At the current report revision, all 101 repository tests pass; the four emitted warnings are deprecation warnings inside the third-party `batchgenerators` package rather than test failures. This count is rerun at the evaluated source commit.
+High-risk contracts were tested before expensive training: case-ID-to-subtype mapping, inverse-frequency weights, macro-F1, patch-evidence weighting, attention-head compatibility, network tensor shapes, gradient flow into the shared encoder, segmentation-only compatibility, mirror/tile/fold classification aggregation, atomic GPU-to-CPU inference retry, categorical mask repair, fixed-split generation, evaluation conventions, report-figure generation, complete-checkpoint selection, and final archive structure. At the current report revision, all 175 repository tests pass; the four emitted warnings are deprecation warnings inside the third-party `batchgenerators` package rather than test failures. This count is rerun at the evaluated source commit.
 
 A full planned-patch CUDA forward/backward smoke test used batch size 2 on the RTX 4060 Laptop GPU and completed within the 8 GB device budget. The production training log additionally confirms that a complete multi-task training/validation epoch finished without an out-of-memory failure.
 
@@ -285,7 +285,7 @@ Activation is determined only from classification CE and training-patch accuracy
 
 Even if the gate activates at epoch 40 or 50, the original 200-epoch joint run must finish cleanly and `checkpoint_final.pth` remains the fixed initialization. One and only one head-only attempt is allowed: learned-query hybrid pooling and the classification MLP are reinitialized with seed 20260806, then optimized for exactly $30\times125=3{,}750$ training-patch updates at batch size 2. The fixed optimizer is AdamW with constant learning rate $3\times10^{-4}$, weight decay $10^{-4}$, and gradient-norm clipping at 1.0. It retains the original training augmentation, foreground oversampling, inverse-frequency class weights, label smoothing 0.05, and non-lesion patch weight 0.25. There is no hyperparameter search or second rescue attempt.
 
-This is not a second round of multi-task fine-tuning. Every encoder and decoder parameter is frozen, both modules remain in evaluation mode, the frozen encoder bottleneck is computed under `no_grad`, and the decoder forward path is bypassed. Exact component hashes before and after optimization verify that the encoder and decoder did not change. The rescue loader indexes only the 252 training keys; validation IDs are read only to verify cardinality and disjointness, while no validation image, label, batch, gradient, or stopping signal is consumed. Validation cannot activate, initialize, stop, extend, restart, or otherwise tune the rescue schedule.
+This is not a second round of multi-task fine-tuning. Every encoder and decoder parameter is frozen, both modules remain in evaluation mode, the frozen encoder bottleneck is computed under `no_grad`, and the decoder forward path is bypassed. Exact component hashes before and after optimization verify that the encoder and decoder did not change. The rescue loader indexes only the 252 training keys. The shared 288-case classification metadata is parsed and range-validated, but only training-key labels are indexed into rescue targets or losses; no validation image, segmentation volume, batch, gradient, or stopping signal is consumed. Exact training and validation case-ID hashes are additionally bound to the frozen pretraining split manifest. Validation cannot activate, initialize, stop, extend, restart, or otherwise tune the rescue schedule.
 
 ## Checkpoint production and final selection
 
@@ -586,7 +586,8 @@ python .\scripts\prepare_dataset.py `
 
 nnUNetv2_preprocess -d 501 -plans_name nnUNetResEncUNetMPlans `
   -c 3d_fullres -np 2
-# Copy only splits_final.json into the matching nnUNet_preprocessed dataset.
+# Copy splits_final.json and split_manifest.json into the matching
+# nnUNet_preprocessed dataset.
 # classification_labels.json remains in nnUNet_raw, where the trainer reads it.
 
 # Primary run (omit -pretrained_weights; none are used).

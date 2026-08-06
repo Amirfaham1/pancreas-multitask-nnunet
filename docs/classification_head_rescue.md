@@ -53,6 +53,9 @@ The shared classification metadata file is loaded, but only training keys are
 indexed for targets; no validation image or segmentation volume is opened and
 no validation batch is constructed or consumed. The audit records zero
 validation batches, no validation gradients, and no validation stopping.
+Cardinality alone is not accepted: the live training and validation case-ID
+hashes must exactly match the corresponding lists in the frozen pretraining
+`split_manifest.json`, whose file hash is also recorded in the rescue audit.
 
 ## Exact invocation
 
@@ -119,6 +122,9 @@ direct-child lock and invoke `-Resume` once. If interruption happened after the
 final checkpoint was atomically committed but before its public audit JSON was
 written, `-Resume` validates the embedded complete state and reconstructs that
 audit without running another optimizer update.
+For an incomplete checkpoint, resume preserves the original start timestamp
+and adds the new process segment to cumulative `elapsed_seconds`; it does not
+replace total runtime with only the latest segment.
 
 Outputs are:
 

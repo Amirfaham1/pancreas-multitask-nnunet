@@ -205,7 +205,8 @@ function Commit-AtomicFile {
         [Parameter(Mandatory)]
         [string] $Destination,
         [Parameter(Mandatory)]
-        [string] $ResolvedDeliveryRoot
+        [string] $ResolvedDeliveryRoot,
+        [switch] $AllowReplace
     )
 
     $resolvedSource = [IO.Path]::GetFullPath($Source)
@@ -217,6 +218,25 @@ function Commit-AtomicFile {
         -Target $resolvedDestination `
         -ResolvedDeliveryRoot $ResolvedDeliveryRoot
     Assert-LeafFile -Path $resolvedSource -Description "Atomic source file"
+
+    if (-not $AllowReplace) {
+        # File.Move is the commit-time create-if-absent primitive. In contrast to
+        # a separate Test-Path check followed by File.Replace, it cannot silently
+        # replace a destination created by another process after preflight.
+        try {
+            [IO.File]::Move($resolvedSource, $resolvedDestination)
+        }
+        catch [IO.IOException] {
+            if (Test-Path -LiteralPath $resolvedDestination) {
+                throw (
+                    "Atomic destination appeared during packaging; refusing to " +
+                    "replace it without -Force: '$resolvedDestination'."
+                )
+            }
+            throw
+        }
+        return
+    }
 
     if (-not (Test-Path -LiteralPath $resolvedDestination)) {
         [IO.File]::Move($resolvedSource, $resolvedDestination)
@@ -245,10 +265,60 @@ function Commit-AtomicFile {
     }
 
     $replacementSucceeded = $false
+    $replaceAttempt = 0
+    $maximumReplaceAttempts = 12
     try {
-        # Windows PowerShell 5.1 requires a non-null backup path for this API.
-        [IO.File]::Replace($resolvedSource, $resolvedExisting, $backup)
-        $replacementSucceeded = $true
+        while (-not $replacementSucceeded) {
+            $replaceAttempt++
+            try {
+                # Windows PowerShell 5.1 requires a non-null backup path for this API.
+                [IO.File]::Replace($resolvedSource, $resolvedExisting, $backup)
+                $replacementSucceeded = $true
+            }
+            catch {
+                # Virus scanners and cloud-sync clients can retain a ZIP handle for
+                # a short interval after the validator process exits. PowerShell
+                # wraps the IOException raised by File.Replace, so walk to the
+                # underlying exception before checking its Win32 error code.
+                $ioException = $_.Exception
+                while ($ioException -isnot [IO.IOException] -and
+                    $null -ne $ioException.InnerException) {
+                    $ioException = $ioException.InnerException
+                }
+                if ($ioException -isnot [IO.IOException]) {
+                    throw
+                }
+                $nativeErrorCode = [int] ($ioException.HResult -band 0xFFFF)
+                $isTransientLock = $nativeErrorCode -in @(32, 33)
+                if (-not $isTransientLock -or
+                    $replaceAttempt -ge $maximumReplaceAttempts) {
+                    throw
+                }
+
+                # Retry only while File.Replace demonstrably made no state change.
+                # If a backup appeared or either endpoint moved, stop and preserve
+                # every surviving file for recovery instead of guessing.
+                if ((Test-Path -LiteralPath $backup) -or
+                    -not (Test-Path -LiteralPath $resolvedSource -PathType Leaf) -or
+                    -not (Test-Path -LiteralPath $resolvedExisting -PathType Leaf)) {
+                    throw (
+                        "Atomic replacement encountered a transient lock, but file " +
+                        "state changed before retry; recovery files were preserved."
+                    )
+                }
+
+                $delayMilliseconds = [Math]::Min(
+                    50 * [Math]::Pow(2, $replaceAttempt - 1),
+                    500
+                )
+                Write-Verbose (
+                    "Atomic replacement temporarily blocked by a file lock " +
+                    "(attempt $replaceAttempt of $maximumReplaceAttempts); " +
+                    "retrying in $([int] $delayMilliseconds) ms."
+                )
+                Start-Sleep -Milliseconds ([int] $delayMilliseconds)
+            }
+        }
     }
     finally {
         # On failure, retain any backup for manual recovery rather than deleting it.
@@ -397,7 +467,8 @@ function Write-AtomicJson {
         [Parameter(Mandatory)]
         [string] $Destination,
         [Parameter(Mandatory)]
-        [string] $ResolvedDeliveryRoot
+        [string] $ResolvedDeliveryRoot,
+        [switch] $AllowReplace
     )
 
     $resolvedDestination = [IO.Path]::GetFullPath($Destination)
@@ -430,7 +501,8 @@ function Write-AtomicJson {
         Commit-AtomicFile `
             -Source $temporary `
             -Destination $resolvedDestination `
-            -ResolvedDeliveryRoot $ResolvedDeliveryRoot
+            -ResolvedDeliveryRoot $ResolvedDeliveryRoot `
+            -AllowReplace:$AllowReplace
     }
     finally {
         if ($null -ne $stream) {
@@ -603,7 +675,8 @@ try {
     Commit-AtomicFile `
         -Source $temporaryArchive `
         -Destination $archivePath `
-        -ResolvedDeliveryRoot $resolvedDeliveryRoot
+        -ResolvedDeliveryRoot $resolvedDeliveryRoot `
+        -AllowReplace:$Force
 }
 finally {
     if (Test-Path -LiteralPath $temporaryArchive) {
@@ -668,7 +741,8 @@ $manifest = [ordered] @{
 Write-AtomicJson `
     -Value $manifest `
     -Destination $manifestPath `
-    -ResolvedDeliveryRoot $resolvedDeliveryRoot
+    -ResolvedDeliveryRoot $resolvedDeliveryRoot `
+    -AllowReplace:$Force
 
 Write-Host "Submission package complete."
 Write-Host "Archive: $archivePath"

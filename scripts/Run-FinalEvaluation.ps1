@@ -58,9 +58,14 @@ try {
 
 $workRoot = [IO.Path]::GetFullPath($WorkRoot)
 $datasetRoot = Join-Path $workRoot "nnUNet_raw\Dataset501_PancreasMultitask"
+$preprocessedDatasetRoot = Join-Path $workRoot (
+    "nnUNet_preprocessed\Dataset501_PancreasMultitask"
+)
 $validationImages = Join-Path $datasetRoot "imagesVal"
 $validationLabels = Join-Path $datasetRoot "labelsVal"
 $classificationManifest = Join-Path $datasetRoot "classification_manifest.json"
+$rawSplitManifest = Join-Path $datasetRoot "split_manifest.json"
+$preprocessedSplitManifest = Join-Path $preprocessedDatasetRoot "split_manifest.json"
 $trainedModelRoot = Join-Path $workRoot (
     "nnUNet_results\Dataset501_PancreasMultitask\" +
     "nnUNetTrainerPancreasMultiTask__nnUNetResEncUNetMPlans__3d_fullres"
@@ -177,6 +182,79 @@ function Assert-FalseJsonProperty {
     }
 }
 
+function Assert-TrueJsonProperty {
+    param(
+        [Parameter(Mandatory)]
+        [object] $InputObject,
+        [Parameter(Mandatory)]
+        [string] $Name,
+        [Parameter(Mandatory)]
+        [string] $Description
+    )
+
+    $value = Get-RequiredJsonProperty `
+        -InputObject $InputObject `
+        -Name $Name `
+        -Description $Description
+    if ($value -isnot [bool] -or $value -ne $true) {
+        throw "$Description property '$Name' must be the JSON boolean true."
+    }
+}
+
+function Assert-JsonNumberEquals {
+    param(
+        [Parameter(Mandatory)]
+        [object] $InputObject,
+        [Parameter(Mandatory)]
+        [string] $Name,
+        [Parameter(Mandatory)]
+        [double] $Expected,
+        [Parameter(Mandatory)]
+        [double] $Tolerance,
+        [Parameter(Mandatory)]
+        [string] $Description
+    )
+
+    $value = [double] (Get-RequiredJsonProperty `
+        -InputObject $InputObject `
+        -Name $Name `
+        -Description $Description)
+    if ([double]::IsNaN($value) -or [double]::IsInfinity($value) -or
+        [Math]::Abs($value - $Expected) -gt $Tolerance) {
+        throw (
+            "$Description property '$Name' must equal $Expected " +
+            "within tolerance $Tolerance; got $value."
+        )
+    }
+}
+
+function Assert-FiniteJsonNumberInRange {
+    param(
+        [Parameter(Mandatory)]
+        [object] $InputObject,
+        [Parameter(Mandatory)]
+        [string] $Name,
+        [Parameter(Mandatory)]
+        [double] $Minimum,
+        [Parameter(Mandatory)]
+        [double] $Maximum,
+        [Parameter(Mandatory)]
+        [string] $Description
+    )
+
+    $value = [double] (Get-RequiredJsonProperty `
+        -InputObject $InputObject `
+        -Name $Name `
+        -Description $Description)
+    if ([double]::IsNaN($value) -or [double]::IsInfinity($value) -or
+        $value -lt $Minimum -or $value -gt $Maximum) {
+        throw (
+            "$Description property '$Name' must be finite and in " +
+            "[$Minimum, $Maximum]; got $value."
+        )
+    }
+}
+
 function Get-FileSha256 {
     param(
         [Parameter(Mandatory)]
@@ -283,7 +361,9 @@ foreach ($requiredDirectory in @(
 foreach ($modelMetadata in @(
     (Join-Path $trainedModelRoot "plans.json"),
     (Join-Path $trainedModelRoot "dataset.json"),
-    $classificationManifest
+    $classificationManifest,
+    $rawSplitManifest,
+    $preprocessedSplitManifest
 )) {
     Assert-LeafFile -Path $modelMetadata -Description "Required model or label metadata"
 }
@@ -425,9 +505,131 @@ else {
     if ([int] (Get-RequiredJsonProperty $rescueAudit "completed_epochs" "Rescue audit") -ne 30) {
         throw "Rescue audit must record exactly 30 completed epochs."
     }
+    if ([string] (Get-RequiredJsonProperty $rescueAudit "method" "Rescue audit") -ne
+        "post_training_frozen_backbone_classification_head_rescue") {
+        throw "Rescue audit method does not identify the frozen-head protocol."
+    }
     $rescueSchedule = Get-RequiredJsonProperty $rescueAudit "schedule" "Rescue audit"
     if ([int] (Get-RequiredJsonProperty $rescueSchedule "epochs" "Rescue schedule") -ne 30) {
         throw "Rescue schedule must declare exactly 30 epochs."
+    }
+    if ([int] (Get-RequiredJsonProperty $rescueSchedule "iterations_per_epoch" "Rescue schedule") -ne 125) {
+        throw "Rescue schedule must declare exactly 125 iterations per epoch."
+    }
+    Assert-JsonNumberEquals $rescueSchedule "learning_rate" 0.0003 1e-12 "Rescue schedule"
+    Assert-JsonNumberEquals $rescueSchedule "weight_decay" 0.0001 1e-12 "Rescue schedule"
+    Assert-JsonNumberEquals $rescueSchedule "gradient_clip_norm" 1.0 1e-12 "Rescue schedule"
+    Assert-JsonNumberEquals $rescueSchedule "label_smoothing" 0.05 1e-12 "Rescue schedule"
+    Assert-JsonNumberEquals $rescueSchedule "nonlesion_patch_weight" 0.25 1e-12 "Rescue schedule"
+    if ([int] (Get-RequiredJsonProperty $rescueSchedule "reset_seed" "Rescue schedule") -ne 20260806) {
+        throw "Rescue schedule reset_seed must be 20260806."
+    }
+    if ([string] (Get-RequiredJsonProperty $rescueAudit "optimizer" "Rescue audit") -ne "AdamW") {
+        throw "Rescue optimizer must be AdamW."
+    }
+    if ([string] (Get-RequiredJsonProperty $rescueAudit "device_type" "Rescue audit") -ne "cuda") {
+        throw "Canonical rescue audit must record CUDA execution."
+    }
+    if ([string] (Get-RequiredJsonProperty $rescueAudit "training_loader" "Rescue audit") -ne
+        "single_threaded_training_split_only") {
+        throw "Rescue audit has an unexpected training-loader contract."
+    }
+    if ([int] (Get-RequiredJsonProperty $rescueAudit "training_batch_size" "Rescue audit") -ne 2) {
+        throw "Rescue training batch size must be 2."
+    }
+    if ([int] (Get-RequiredJsonProperty $rescueAudit "maximum_attempts" "Rescue audit") -ne 1) {
+        throw "Rescue audit must declare one maximum attempt."
+    }
+    if ([int] (Get-RequiredJsonProperty $rescueAudit "training_updates_expected" "Rescue audit") -ne 3750) {
+        throw "Rescue audit must declare exactly 3,750 expected updates."
+    }
+    Assert-FalseJsonProperty $rescueAudit "wandb_enabled" "Rescue audit"
+    Assert-FalseJsonProperty $rescueAudit "early_stopping" "Rescue audit"
+    Assert-FalseJsonProperty $rescueAudit "decoder_executed_during_rescue" "Rescue audit"
+    Assert-FalseJsonProperty $rescueAudit "encoder_gradient_enabled" "Rescue audit"
+    Assert-FalseJsonProperty $rescueAudit "decoder_gradient_enabled" "Rescue audit"
+    Assert-FalseJsonProperty `
+        $rescueAudit `
+        "validation_labels_indexed_for_targets" `
+        "Rescue audit"
+
+    $selectionMetricProperty = $rescueAudit.PSObject.Properties[
+        "selection_or_stopping_metric"
+    ]
+    if ($null -eq $selectionMetricProperty) {
+        throw "Rescue audit is missing selection_or_stopping_metric."
+    }
+    if ($null -ne $selectionMetricProperty.Value) {
+        throw "Rescue selection_or_stopping_metric must be JSON null."
+    }
+    $originalStartedAt = [string] (Get-RequiredJsonProperty `
+        $rescueAudit `
+        "started_at_utc" `
+        "Rescue audit")
+    if ([string]::IsNullOrWhiteSpace($originalStartedAt)) {
+        throw "Rescue audit started_at_utc must be non-empty."
+    }
+    $resumeCount = [int] (Get-RequiredJsonProperty $rescueAudit "resume_count" "Rescue audit")
+    if ($resumeCount -lt 0) {
+        throw "Rescue audit resume_count must be non-negative."
+    }
+    Assert-FiniteJsonNumberInRange `
+        $rescueAudit `
+        "elapsed_seconds" `
+        0.000000001 `
+        ([double]::MaxValue) `
+        "Rescue audit"
+
+    $classificationParameterNames = @(
+        Get-RequiredJsonProperty `
+            $rescueAudit `
+            "classification_parameter_names" `
+            "Rescue audit"
+    )
+    if ($classificationParameterNames.Count -ne 15) {
+        throw "Rescue audit must list exactly 15 classification parameters."
+    }
+    foreach ($parameterName in $classificationParameterNames) {
+        $name = [string] $parameterName
+        if (-not ($name.StartsWith("classification_pool.") -or
+            $name.StartsWith("classification_head."))) {
+            throw "Rescue audit lists a non-classification trainable parameter: '$name'."
+        }
+    }
+    if ([int64] (Get-RequiredJsonProperty `
+        $rescueAudit `
+        "classification_trainable_parameter_count" `
+        "Rescue audit") -le 0) {
+        throw "Rescue classification trainable-parameter count must be positive."
+    }
+
+    $trainingClassCounts = @(
+        Get-RequiredJsonProperty $rescueAudit "training_class_counts" "Rescue audit"
+    )
+    $expectedTrainingClassCounts = @(62, 106, 84)
+    if ($trainingClassCounts.Count -ne $expectedTrainingClassCounts.Count) {
+        throw "Rescue audit training_class_counts must contain three values."
+    }
+    for ($index = 0; $index -lt $expectedTrainingClassCounts.Count; $index++) {
+        if ([int] $trainingClassCounts[$index] -ne $expectedTrainingClassCounts[$index]) {
+            throw "Rescue audit training_class_counts differ from 62/106/84."
+        }
+    }
+    $trainingClassWeights = @(
+        Get-RequiredJsonProperty $rescueAudit "training_class_weights" "Rescue audit"
+    )
+    $expectedTrainingClassWeights = @(1.35483871, 0.79245283, 1.0)
+    if ($trainingClassWeights.Count -ne $expectedTrainingClassWeights.Count) {
+        throw "Rescue audit training_class_weights must contain three values."
+    }
+    for ($index = 0; $index -lt $expectedTrainingClassWeights.Count; $index++) {
+        $difference = [Math]::Abs(
+            [double] $trainingClassWeights[$index] -
+            [double] $expectedTrainingClassWeights[$index]
+        )
+        if ($difference -gt 1e-6) {
+            throw "Rescue audit training_class_weights differ from the frozen values."
+        }
     }
     Assert-Sha256Matches `
         -RecordedValue (Get-RequiredJsonProperty $rescueAudit "source_checkpoint_sha256" "Rescue audit") `
@@ -445,15 +647,180 @@ else {
         throw "Rescue audit activation_decision_epoch differs from the activation audit."
     }
 
+    $sourceComponentHashes = Get-RequiredJsonProperty `
+        $rescueAudit `
+        "source_component_sha256" `
+        "Rescue audit"
+    $currentComponentHashes = Get-RequiredJsonProperty `
+        $rescueAudit `
+        "current_component_sha256" `
+        "Rescue audit"
+    foreach ($componentName in @("encoder", "decoder")) {
+        Assert-Sha256Matches `
+            -RecordedValue (Get-RequiredJsonProperty `
+                $sourceComponentHashes $componentName "Source component hashes") `
+            -ActualValue ([string] (Get-RequiredJsonProperty `
+                $currentComponentHashes $componentName "Current component hashes")) `
+            -Description "Frozen $componentName component SHA-256"
+    }
+    $sourceClassificationHash = [string] (Get-RequiredJsonProperty `
+        $sourceComponentHashes "classification" "Source component hashes")
+    $currentClassificationHash = [string] (Get-RequiredJsonProperty `
+        $currentComponentHashes "classification" "Current component hashes")
+    Assert-Sha256Matches `
+        $sourceClassificationHash `
+        $sourceClassificationHash `
+        "Source classification component SHA-256"
+    Assert-Sha256Matches `
+        $currentClassificationHash `
+        $currentClassificationHash `
+        "Current classification component SHA-256"
+    if ([String]::Equals(
+        $sourceClassificationHash,
+        $currentClassificationHash,
+        [StringComparison]::OrdinalIgnoreCase
+    )) {
+        throw "Rescue classification component did not change from checkpoint_final."
+    }
+
     $splitAudit = Get-RequiredJsonProperty $rescueAudit "split_audit" "Rescue audit"
-    if ((Get-RequiredJsonProperty $splitAudit "split_disjoint" "Rescue split audit") -ne $true) {
-        throw "Rescue split audit must confirm a disjoint training/validation split."
+    Assert-TrueJsonProperty $splitAudit "split_disjoint" "Rescue split audit"
+    if ([int] (Get-RequiredJsonProperty $splitAudit "training_case_count" "Rescue split audit") -ne 252) {
+        throw "Rescue split audit must record exactly 252 training cases."
+    }
+    if ([int] (Get-RequiredJsonProperty $splitAudit "validation_case_count" "Rescue split audit") -ne 36) {
+        throw "Rescue split audit must record exactly 36 validation cases."
     }
     Assert-FalseJsonProperty $splitAudit "validation_images_opened" "Rescue split audit"
     Assert-FalseJsonProperty $splitAudit "validation_used_for_gradients" "Rescue split audit"
     Assert-FalseJsonProperty $splitAudit "validation_used_for_stopping" "Rescue split audit"
     if ([int] (Get-RequiredJsonProperty $splitAudit "validation_batches_consumed" "Rescue split audit") -ne 0) {
         throw "Rescue split audit must record zero validation batches consumed."
+    }
+    if ([int] (Get-RequiredJsonProperty `
+        $splitAudit `
+        "frozen_split_manifest_schema_version" `
+        "Rescue split audit") -ne 1) {
+        throw "Frozen split-manifest schema version must be 1."
+    }
+    Assert-TrueJsonProperty `
+        $splitAudit `
+        "frozen_source_splits_preserved" `
+        "Rescue split audit"
+    Assert-TrueJsonProperty `
+        $splitAudit `
+        "matches_frozen_split_manifest" `
+        "Rescue split audit"
+    if ([int] (Get-RequiredJsonProperty `
+        $splitAudit `
+        "frozen_manifest_training_case_count" `
+        "Rescue split audit") -ne 252) {
+        throw "Frozen split manifest must record 252 training cases."
+    }
+    if ([int] (Get-RequiredJsonProperty `
+        $splitAudit `
+        "frozen_manifest_validation_case_count" `
+        "Rescue split audit") -ne 36) {
+        throw "Frozen split manifest must record 36 validation cases."
+    }
+    $rawSplitManifestSha256 = Get-FileSha256 -Path $rawSplitManifest
+    $preprocessedSplitManifestSha256 = Get-FileSha256 -Path $preprocessedSplitManifest
+    if (-not [String]::Equals(
+        $rawSplitManifestSha256,
+        $preprocessedSplitManifestSha256,
+        [StringComparison]::OrdinalIgnoreCase
+    )) {
+        throw "Raw and preprocessed frozen split manifests have different SHA-256 values."
+    }
+    Assert-Sha256Matches `
+        -RecordedValue (Get-RequiredJsonProperty `
+            $splitAudit "frozen_split_manifest_sha256" "Rescue split audit") `
+        -ActualValue $preprocessedSplitManifestSha256 `
+        -Description "Frozen split-manifest SHA-256"
+    $recordedSplitManifestPath = [IO.Path]::GetFullPath([string] (
+        Get-RequiredJsonProperty `
+            $splitAudit `
+            "frozen_split_manifest" `
+            "Rescue split audit"
+    ))
+    if (-not [String]::Equals(
+        $recordedSplitManifestPath,
+        [IO.Path]::GetFullPath($preprocessedSplitManifest),
+        [StringComparison]::OrdinalIgnoreCase
+    )) {
+        throw "Rescue audit is bound to an unexpected frozen split-manifest path."
+    }
+    $trainingCaseHash = [string] (Get-RequiredJsonProperty `
+        $splitAudit "training_case_ids_sha256" "Rescue split audit")
+    $manifestTrainingCaseHash = [string] (Get-RequiredJsonProperty `
+        $splitAudit "frozen_manifest_training_case_ids_sha256" "Rescue split audit")
+    Assert-Sha256Matches `
+        $trainingCaseHash `
+        $manifestTrainingCaseHash `
+        "Training case-ID SHA-256 binding"
+    $validationCaseHash = [string] (Get-RequiredJsonProperty `
+        $splitAudit "validation_case_ids_sha256" "Rescue split audit")
+    $manifestValidationCaseHash = [string] (Get-RequiredJsonProperty `
+        $splitAudit "frozen_manifest_validation_case_ids_sha256" "Rescue split audit")
+    Assert-Sha256Matches `
+        $validationCaseHash `
+        $manifestValidationCaseHash `
+        "Validation case-ID SHA-256 binding"
+
+    $trainingOnlyHistory = @(
+        Get-RequiredJsonProperty $rescueAudit "training_only_history" "Rescue audit"
+    )
+    if ($trainingOnlyHistory.Count -ne 30) {
+        throw "Rescue audit training_only_history must contain exactly 30 epochs."
+    }
+    for ($epochIndex = 0; $epochIndex -lt $trainingOnlyHistory.Count; $epochIndex++) {
+        $epochRecord = $trainingOnlyHistory[$epochIndex]
+        $epochDescription = "Rescue training-only history epoch $epochIndex"
+        if ([int] (Get-RequiredJsonProperty $epochRecord "epoch" $epochDescription) -ne
+            $epochIndex) {
+            throw "$epochDescription has a non-contiguous epoch index."
+        }
+        Assert-FalseJsonProperty $epochRecord "generalization_metric" $epochDescription
+        Assert-FiniteJsonNumberInRange `
+            $epochRecord "training_loss_mean" 0 ([double]::MaxValue) $epochDescription
+        Assert-FiniteJsonNumberInRange `
+            $epochRecord "training_patch_accuracy" 0 1 $epochDescription
+        Assert-FiniteJsonNumberInRange `
+            $epochRecord "training_lesion_patch_fraction" 0 1 $epochDescription
+        Assert-FiniteJsonNumberInRange `
+            $epochRecord "gradient_norm_before_clip_mean" 0 ([double]::MaxValue) `
+            $epochDescription
+        Assert-FiniteJsonNumberInRange `
+            $epochRecord "gradient_norm_before_clip_max" 0 ([double]::MaxValue) `
+            $epochDescription
+        Assert-FiniteJsonNumberInRange `
+            $epochRecord "elapsed_seconds" 0.000000001 ([double]::MaxValue) `
+            $epochDescription
+
+        $targetCounts = @(
+            Get-RequiredJsonProperty $epochRecord "training_target_counts" $epochDescription
+        )
+        $predictionCounts = @(
+            Get-RequiredJsonProperty `
+                $epochRecord "training_prediction_counts" $epochDescription
+        )
+        if ($targetCounts.Count -ne 3 -or $predictionCounts.Count -ne 3) {
+            throw "$epochDescription must record three target and prediction counts."
+        }
+        $targetTotal = 0
+        $predictionTotal = 0
+        for ($classIndex = 0; $classIndex -lt 3; $classIndex++) {
+            $targetCount = [int] $targetCounts[$classIndex]
+            $predictionCount = [int] $predictionCounts[$classIndex]
+            if ($targetCount -lt 0 -or $predictionCount -lt 0) {
+                throw "$epochDescription contains a negative class count."
+            }
+            $targetTotal += $targetCount
+            $predictionTotal += $predictionCount
+        }
+        if ($targetTotal -ne 250 -or $predictionTotal -ne 250) {
+            throw "$epochDescription must account for exactly 125 x 2 samples."
+        }
     }
 
     $candidates += [pscustomobject]@{

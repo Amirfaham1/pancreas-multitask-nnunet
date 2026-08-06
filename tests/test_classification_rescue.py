@@ -27,6 +27,7 @@ from pancreas_multitask.classification_rescue import (
     strict_load_network_weights,
     validate_activation_audit,
     validate_disjoint_split,
+    validate_frozen_split_manifest,
     validate_resume_state,
 )
 from pancreas_multitask.network import MultiTaskResEncUNet
@@ -107,6 +108,10 @@ def test_frozen_rescue_step_updates_only_registered_classification_parameters() 
     reset_classification_parameters(model, seed=19)
     immutable_before = component_hashes(model)
     items = freeze_for_classification_rescue(model)
+    assert len(items) == 15
+    assert all(
+        name.startswith(("classification_pool.", "classification_head.")) for name, _ in items
+    )
     optimizer = torch.optim.AdamW(
         [parameter for _, parameter in items],
         lr=3e-4,
@@ -191,6 +196,9 @@ def test_resume_requires_identical_source_and_frozen_schedule() -> None:
         "completed_epochs": 1,
         "optimizer_state": {},
         "rng_state": {},
+        "started_at_utc": "2026-08-06T00:00:00+00:00",
+        "elapsed_seconds": 12.5,
+        "resume_count": 0,
         "training_only_history": [{}],
         "current_component_sha256": {
             "encoder": "e",
@@ -231,6 +239,9 @@ def test_complete_resume_state_can_repair_a_missing_public_audit() -> None:
         "completed_epochs": 2,
         "optimizer_state": {},
         "rng_state": {},
+        "started_at_utc": "2026-08-06T00:00:00+00:00",
+        "elapsed_seconds": 25.0,
+        "resume_count": 1,
         "training_only_history": [{}, {}],
         "current_component_sha256": {
             "encoder": "e",
@@ -275,6 +286,64 @@ def test_split_audit_records_zero_validation_use_and_rejects_overlap() -> None:
             ["same"],
             expected_training_cases=1,
             expected_validation_cases=1,
+        )
+
+
+def test_live_split_is_hash_bound_to_frozen_pretraining_manifest() -> None:
+    manifest = {
+        "schema_version": 1,
+        "source_splits_preserved": True,
+        "planning_case_ids": ["train_b", "train_a"],
+        "train_case_ids": ["train_a", "train_b"],
+        "validation_case_ids": ["validation_a"],
+    }
+
+    binding = validate_frozen_split_manifest(
+        manifest,
+        ["train_b", "train_a"],
+        ["validation_a"],
+    )
+
+    assert binding["matches_frozen_split_manifest"] is True
+    assert binding["frozen_manifest_training_case_count"] == 2
+    assert binding["frozen_manifest_validation_case_count"] == 1
+    assert len(binding["frozen_manifest_training_case_ids_sha256"]) == 64
+    assert len(binding["frozen_manifest_validation_case_ids_sha256"]) == 64
+
+    with pytest.raises(ValueError, match="Live training split differs"):
+        validate_frozen_split_manifest(
+            manifest,
+            ["train_a", "validation_a"],
+            ["train_b"],
+        )
+
+
+def test_resume_rejects_invalid_cumulative_timing_provenance() -> None:
+    schedule = RescueSchedule(epochs=2, iterations_per_epoch=3)
+    state = {
+        "schema_version": RESCUE_SCHEMA_VERSION,
+        "source_checkpoint_sha256": "b" * 64,
+        "schedule": schedule.to_dict(),
+        "status": "in_progress",
+        "completed_epochs": 1,
+        "optimizer_state": {},
+        "rng_state": {},
+        "started_at_utc": "2026-08-06T00:00:00+00:00",
+        "elapsed_seconds": -1.0,
+        "resume_count": 0,
+        "training_only_history": [{}],
+        "current_component_sha256": {
+            "encoder": "e",
+            "decoder": "d",
+            "classification": "c",
+        },
+    }
+
+    with pytest.raises(ValueError, match="cumulative elapsed_seconds"):
+        validate_resume_state(
+            state,
+            source_checkpoint_sha256="b" * 64,
+            schedule=schedule,
         )
 
 
@@ -339,6 +408,17 @@ def test_rescue_cli_defaults_match_predeclared_schedule() -> None:
     assert args.resume is False
 
 
+def test_rescue_script_preserves_cumulative_resume_timing_and_manifest_binding() -> None:
+    source = (ROOT / "scripts" / "train_classification_rescue.py").read_text(encoding="utf-8")
+
+    assert '"started_at_utc": original_started_at' in source
+    assert '"elapsed_seconds": prior_elapsed_seconds' in source
+    assert "+ (time.perf_counter() - wall_start)" in source
+    assert 'Path(trainer.preprocessed_dataset_folder_base) / "split_manifest.json"' in source
+    assert "validate_frozen_split_manifest(" in source
+    assert '"frozen_split_manifest_sha256": hash_before' in source
+
+
 def test_activation_audit_refuses_to_replace_existing_artifact(tmp_path: Path) -> None:
     script_path = ROOT / "scripts" / "audit_classification_rescue_activation.py"
     spec = importlib.util.spec_from_file_location("classification_rescue_activation", script_path)
@@ -356,9 +436,7 @@ def test_activation_audit_refuses_to_replace_existing_artifact(tmp_path: Path) -
 
 
 def test_rescue_wrapper_never_deletes_the_python_ownership_lock() -> None:
-    source = (ROOT / "scripts" / "Run-ClassificationRescue.ps1").read_text(
-        encoding="utf-8"
-    )
+    source = (ROOT / "scripts" / "Run-ClassificationRescue.ps1").read_text(encoding="utf-8")
 
     assert "Remove-Item" not in source
     assert '"train_classification_rescue.py"' in source

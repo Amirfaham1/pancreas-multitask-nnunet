@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -107,6 +108,9 @@ def test_force_atomic_replacement_and_every_removal_have_delivery_path_guards() 
     assert refusal < guard < replacement
     assert "Remove-Item -LiteralPath $resolvedExistingArchive" not in SOURCE
     assert "[IO.File]::Replace($resolvedSource, $resolvedExisting, $backup)" in SOURCE
+    assert "if (-not $AllowReplace)" in SOURCE
+    assert "[IO.File]::Move($resolvedSource, $resolvedDestination)" in SOURCE
+    assert "-AllowReplace:$Force" in SOURCE
     assert "-Recurse" not in SOURCE
 
     for line_number, line in enumerate(SOURCE.splitlines()):
@@ -114,6 +118,222 @@ def test_force_atomic_replacement_and_every_removal_have_delivery_path_guards() 
             continue
         nearby = SOURCE.splitlines()[max(0, line_number - 5) : line_number]
         assert any("Assert-DirectDeliveryChild" in item for item in nearby)
+
+
+def test_commit_time_no_force_conflict_preserves_existing_file_and_cleans_stage(
+    tmp_path: Path,
+) -> None:
+    """Exercise the atomic no-replace branch without running the package pipeline."""
+
+    executable = _powershell_executable()
+    if executable is None:
+        pytest.skip("PowerShell is unavailable")
+
+    delivery = tmp_path / "delivery"
+    delivery.mkdir()
+    staged = delivery / ".staged.tmp.zip"
+    archive = delivery / "Amirfaham_Fallahpour_results.zip"
+    staged.write_bytes(b"new staged archive")
+    archive.write_bytes(b"concurrent existing archive")
+
+    harness = r"""
+& {
+    $tokens = $null
+    $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+        $env:PACKAGE_SCRIPT_UNDER_TEST, [ref] $tokens, [ref] $errors
+    )
+    if ($errors.Count -gt 0) { throw "Package script did not parse." }
+    foreach ($name in @(
+        "Get-NormalizedFullPath", "Assert-DirectDeliveryChild", "Assert-LeafFile",
+        "Commit-AtomicFile"
+    )) {
+        $definition = $ast.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -ceq $name
+            },
+            $true
+        )
+        if ($definition.Count -ne 1) { throw "Missing function $name." }
+        Invoke-Expression $definition[0].Extent.Text
+    }
+    try {
+        Commit-AtomicFile `
+            -Source $env:PACKAGE_STAGED_FILE `
+            -Destination $env:PACKAGE_EXISTING_ARCHIVE `
+            -ResolvedDeliveryRoot $env:PACKAGE_DELIVERY_ROOT
+    }
+    finally {
+        if (Test-Path -LiteralPath $env:PACKAGE_STAGED_FILE) {
+            Remove-Item -LiteralPath $env:PACKAGE_STAGED_FILE -Force
+        }
+    }
+}
+"""
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PACKAGE_SCRIPT_UNDER_TEST": str(SCRIPT),
+            "PACKAGE_STAGED_FILE": str(staged),
+            "PACKAGE_EXISTING_ARCHIVE": str(archive),
+            "PACKAGE_DELIVERY_ROOT": str(delivery),
+        }
+    )
+    completed = subprocess.run(
+        [
+            executable,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            harness,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env=environment,
+    )
+
+    assert completed.returncode != 0
+    assert "refusing to replace it without -Force" in completed.stderr + completed.stdout
+    assert archive.read_bytes() == b"concurrent existing archive"
+    assert not staged.exists()
+
+
+def test_force_atomic_replacement_retries_a_transient_sharing_violation(
+    tmp_path: Path,
+) -> None:
+    executable = _powershell_executable()
+    if executable is None:
+        pytest.skip("PowerShell is unavailable")
+
+    delivery = tmp_path / "delivery"
+    delivery.mkdir()
+    staged = delivery / ".staged.tmp.zip"
+    archive = delivery / "Amirfaham_Fallahpour_results.zip"
+    ready = tmp_path / "lock-ready"
+    release = tmp_path / "release-lock"
+    staged.write_bytes(b"new staged archive")
+    archive.write_bytes(b"old committed archive")
+
+    locker_script = r"""
+& {
+    $stream = [IO.File]::Open(
+        $env:PACKAGE_EXISTING_ARCHIVE,
+        [IO.FileMode]::Open,
+        [IO.FileAccess]::Read,
+        [IO.FileShare]::None
+    )
+    try {
+        [IO.File]::WriteAllText($env:PACKAGE_LOCK_READY, "ready")
+        $deadline = [DateTime]::UtcNow.AddSeconds(15)
+        while (-not (Test-Path -LiteralPath $env:PACKAGE_RELEASE_LOCK)) {
+            if ([DateTime]::UtcNow -ge $deadline) { throw "Timed out waiting to release lock." }
+            Start-Sleep -Milliseconds 10
+        }
+        Start-Sleep -Milliseconds 350
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+"""
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PACKAGE_EXISTING_ARCHIVE": str(archive),
+            "PACKAGE_LOCK_READY": str(ready),
+            "PACKAGE_RELEASE_LOCK": str(release),
+        }
+    )
+    locker = subprocess.Popen(
+        [
+            executable,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            locker_script,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=environment,
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while not ready.is_file() and locker.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert ready.is_file(), locker.communicate(timeout=2)
+
+        harness = r"""
+& {
+    $tokens = $null
+    $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+        $env:PACKAGE_SCRIPT_UNDER_TEST, [ref] $tokens, [ref] $errors
+    )
+    if ($errors.Count -gt 0) { throw "Package script did not parse." }
+    foreach ($name in @(
+        "Get-NormalizedFullPath", "Assert-DirectDeliveryChild",
+        "Get-ReparsePointTag", "Assert-NoRedirectingReparsePointInPath",
+        "Assert-LeafFile", "Commit-AtomicFile"
+    )) {
+        $definition = $ast.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -ceq $name
+            },
+            $true
+        )
+        if ($definition.Count -ne 1) { throw "Missing function $name." }
+        Invoke-Expression $definition[0].Extent.Text
+    }
+    [IO.File]::WriteAllText($env:PACKAGE_RELEASE_LOCK, "release")
+    Commit-AtomicFile `
+        -Source $env:PACKAGE_STAGED_FILE `
+        -Destination $env:PACKAGE_EXISTING_ARCHIVE `
+        -ResolvedDeliveryRoot $env:PACKAGE_DELIVERY_ROOT `
+        -AllowReplace -Verbose
+}
+"""
+        commit_environment = environment.copy()
+        commit_environment.update(
+            {
+                "PACKAGE_SCRIPT_UNDER_TEST": str(SCRIPT),
+                "PACKAGE_STAGED_FILE": str(staged),
+                "PACKAGE_DELIVERY_ROOT": str(delivery),
+            }
+        )
+        completed = subprocess.run(
+            [
+                executable,
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                harness,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=commit_environment,
+        )
+    finally:
+        release.touch(exist_ok=True)
+        locker_stdout, locker_stderr = locker.communicate(timeout=5)
+
+    assert locker.returncode == 0, locker_stderr + locker_stdout
+    assert completed.returncode == 0, completed.stderr + completed.stdout
+    assert "temporarily blocked by a file lock" in completed.stderr + completed.stdout
+    assert archive.read_bytes() == b"new staged archive"
+    assert not staged.exists()
+    assert not list(delivery.glob("*.replace-backup"))
 
 
 def test_native_stderr_and_reparse_points_are_handled_explicitly() -> None:

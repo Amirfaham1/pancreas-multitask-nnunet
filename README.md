@@ -121,14 +121,19 @@ Then add the supplied validation cases to the preprocessing layout, while preser
   -c 3d_fullres -np 2
 ```
 
-Copy only the generated manual split into the preprocessed dataset directory
-before training. Keep `classification_labels.json` in the raw dataset directory,
-where the custom trainer reads it:
+Copy the generated manual split and its immutable case-membership manifest into
+the preprocessed dataset directory before training. The rescue/evaluation audit
+cross-checks the manifest against the raw-dataset copy. Keep
+`classification_labels.json` in the raw dataset directory, where the custom
+trainer reads it:
 
 ```powershell
+$rawDataset = 'D:\MLQuizWork\nnUNet_raw\Dataset501_PancreasMultitask'
 $preprocessed = 'D:\MLQuizWork\nnUNet_preprocessed\Dataset501_PancreasMultitask'
-$split = 'D:\MLQuizWork\nnUNet_raw\Dataset501_PancreasMultitask\splits_final.json'
-Copy-Item -LiteralPath $split -Destination $preprocessed -Force
+Copy-Item -LiteralPath (Join-Path $rawDataset 'splits_final.json') `
+  -Destination $preprocessed -Force
+Copy-Item -LiteralPath (Join-Path $rawDataset 'split_manifest.json') `
+  -Destination $preprocessed -Force
 ```
 
 ## Tests and CUDA smoke test
@@ -137,8 +142,9 @@ Copy-Item -LiteralPath $split -Destination $preprocessed -Force
 D:\MLQuizWork\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The historical pre-launch gate had **46 passing tests**; the current expanded
-suite has **92 passing tests**. The exact CLI smoke and guarded benchmark were:
+The historical pre-launch gate had **46 passing tests**. The expanded suite is
+rerun after final integration; the terminal result, rather than a stale count in
+this document, is the delivery gate. The exact CLI smoke and guarded benchmark were:
 
 ```powershell
 # Run after the process-scoped environment setup above.
@@ -278,12 +284,27 @@ The evaluator reports unweighted case-level mean/std and bootstrap confidence in
 
 ## Test package
 
-The required ZIP root contains exactly 72 masks named like `quiz_037.nii.gz` and `subtype_results.csv` with the exact header `Names,Subtype`. Before delivery, validate either the directory or ZIP against the supplied test images:
+The required ZIP root contains exactly 72 masks named like `quiz_037.nii.gz`
+and `subtype_results.csv` with the exact header `Names,Subtype`. For the first
+production run, use the single guarded entry point after checkpoint selection:
 
-The guarded packager validates the prediction directory, creates an explicit
+```powershell
+.\scripts\Run-SelectedTestAndPackage.ps1 -WorkRoot D:\MLQuizWork
+```
+
+It verifies the activation/rescue and four-candidate selection provenance,
+rehashes the selected checkpoint before and after one fresh test inference,
+keeps probability/runtime evidence outside the strict prediction directory,
+packages the result, and independently validates the ZIP against the untouched
+supplied test folder.
+
+The lower-level guarded packager validates an already completed prediction
+directory, creates an explicit
 flat staged ZIP, validates the staged ZIP before committing it, validates the
 committed ZIP again, and records its SHA-256 and audit paths in an atomic JSON
-manifest. It refuses to replace an existing archive unless `-Force` is passed:
+manifest. Use it directly only for the documented package-only recovery path or
+a deliberate rebuild. It refuses to replace an existing archive unless
+`-Force` is passed:
 
 ```powershell
 .\scripts\Package-Submission.ps1
@@ -307,6 +328,50 @@ D:\MLQuizWork\.venv\Scripts\python.exe .\scripts\validate_submission.py `
 | Lesion Dice | ≥ 0.27 | **PENDING** |
 | Three-class macro-F1 | ≥ 0.60 | **PENDING** |
 
+After the one intended offline run has been synced and its remote run ID has
+been verified, publish the independently evaluated result to that same run.
+The first invocation below is local validation only: it does not import W&B or
+make a network request. Review its plan before running the second invocation.
+
+```powershell
+$evaluation = 'D:\MLQuizWork\evaluation\fixed_validation'
+$selectionPath = Join-Path $evaluation 'checkpoint_selection.json'
+$selection = Get-Content -LiteralPath $selectionPath -Raw | ConvertFrom-Json
+$selectedRoot = Join-Path $evaluation $selection.selected_candidate
+$publishArgs = @(
+  '--metrics-json', (Join-Path $selectedRoot 'metrics.json'),
+  '--case-csv', (Join-Path $selectedRoot 'case_metrics.csv'),
+  '--selection-json', $selectionPath,
+  '--entity', 'amirfahamfallahpour1379-university-of-toronto',
+  '--project', 'pancreas-multitask-amirfaham-fallahpour',
+  '--run-id', 'hrs05iyx'
+)
+
+& D:\MLQuizWork\.venv\Scripts\python.exe `
+  .\scripts\publish_full_volume_to_wandb.py @publishArgs --dry-run
+# Only after the dry-run plan and completed offline sync have been verified:
+& D:\MLQuizWork\.venv\Scripts\python.exe `
+  .\scripts\publish_full_volume_to_wandb.py @publishArgs
+```
+
+The publisher requires evaluator schema version 1, exact agreement between all
+36 JSON and CSV case rows, recomputed aggregate metrics, and a valid deterministic
+three- or four-candidate selection. It uses the Public API to require the exact
+run, `finished` state, history and summary at epoch 199, then updates only a
+sanitized `full_volume/*` summary and its deterministic SHA-256. It never resumes
+or finishes the run, appends history, or uploads case-level files. An identical
+existing hash is a no-op; any partial or conflicting prior summary fails closed.
+
+After publication, export a fresh sanitized evidence directory (the destination
+must not already exist):
+
+```powershell
+& D:\MLQuizWork\.venv\Scripts\python.exe `
+  .\scripts\export_wandb_evidence.py `
+  --run-path 'amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/hrs05iyx' `
+  --output-dir 'D:\MLQuizWork\evaluation\wandb_evidence_final'
+```
+
 The [public W&B run](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx) is visible now; its final history, selected checkpoint, dispersion statistics, and qualitative failure analysis will be frozen only after training and the independent evaluator complete.
 
 ## AI workflow and attribution
@@ -317,7 +382,7 @@ proposed tests, and supported debugging, experiment monitoring, evaluation,
 and packaging. Amirfaham Fallahpour defined the goal and quality bar, supplied
 access and compute, made consequential scope decisions, reviewed the work, and
 owns the final submission. AI outputs were treated as untrusted until checked
-with data audits, 101 automated tests, real CUDA smoke tests, saved
+with data audits, automated tests, real CUDA smoke tests, saved
 configuration/checkpoint evidence, and human review; the final deliverables
 will additionally require clean archive validation before submission. See
 [docs/AI_WORKFLOW.md](docs/AI_WORKFLOW.md).
