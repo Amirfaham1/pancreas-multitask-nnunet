@@ -5,11 +5,12 @@ returns one segmentation tensor.  The multi-task network deliberately keeps
 that default, while this module provides a separate path that carries the
 classification result through test-time augmentation, tiles, and folds.
 
-The implementation is sequential at the tile level.  This is a little slower
-than nnU-Net's producer-thread implementation, but keeps all auxiliary
-aggregation local to one prediction attempt.  In particular, an unsuccessful
-on-device accumulation cannot leak classification votes into the CPU-results
-retry.
+Tiles may be forwarded in small consecutive batches while remaining sequential
+at the accumulator.  This preserves the declared tile-order aggregation for
+both outputs while reducing Python and kernel-launch overhead.  All auxiliary
+aggregation remains local to one prediction attempt.  In particular, an
+unsuccessful on-device accumulation cannot leak classification votes into the
+CPU-results retry.
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ from torch._dynamo import OptimizedModule
 from tqdm import tqdm
 
 SUBMISSION_FILE_ENDING = ".nii.gz"
+DEFAULT_PREDICTION_DEVICE = torch.device("cuda")
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,6 +333,169 @@ class JointNNUNetPredictor(nnUNetPredictor):
     must not be passed through nnU-Net's spatial resampling/export functions.
     """
 
+    def __init__(
+        self,
+        tile_step_size: float = 0.5,
+        use_gaussian: bool = True,
+        use_mirroring: bool = True,
+        perform_everything_on_device: bool = True,
+        device: torch.device = DEFAULT_PREDICTION_DEVICE,
+        verbose: bool = False,
+        verbose_preprocessing: bool = False,
+        allow_tqdm: bool = True,
+        *,
+        tile_batch_size: int = 1,
+        tta_batch_size: int = 1,
+    ) -> None:
+        if isinstance(tile_batch_size, bool) or not isinstance(tile_batch_size, int):
+            raise TypeError("tile_batch_size must be an integer")
+        if tile_batch_size < 1:
+            raise ValueError("tile_batch_size must be at least 1")
+        if isinstance(tta_batch_size, bool) or not isinstance(tta_batch_size, int):
+            raise TypeError("tta_batch_size must be an integer")
+        if tta_batch_size < 1:
+            raise ValueError("tta_batch_size must be at least 1")
+        super().__init__(
+            tile_step_size=tile_step_size,
+            use_gaussian=use_gaussian,
+            use_mirroring=use_mirroring,
+            perform_everything_on_device=perform_everything_on_device,
+            device=device,
+            verbose=verbose,
+            verbose_preprocessing=verbose_preprocessing,
+            allow_tqdm=allow_tqdm,
+        )
+        self.tile_batch_size = tile_batch_size
+        self.tta_batch_size = tta_batch_size
+        self.reset_inference_runtime_counters()
+
+    def reset_inference_runtime_counters(self) -> None:
+        """Reset counters used to audit batched sliding-window execution."""
+
+        requested = getattr(self, "tile_batch_size", 1)
+        if isinstance(requested, bool) or not isinstance(requested, int) or requested < 1:
+            raise ValueError("tile_batch_size must be an integer of at least 1")
+        self._adaptive_tile_batch_size = requested
+        requested_tta = getattr(self, "tta_batch_size", 1)
+        if (
+            isinstance(requested_tta, bool)
+            or not isinstance(requested_tta, int)
+            or requested_tta < 1
+        ):
+            raise ValueError("tta_batch_size must be an integer of at least 1")
+        self._adaptive_tta_batch_size = requested_tta
+        self._tile_batch_oom_fallback_count = 0
+        self._tta_batch_oom_fallback_count = 0
+        self._logical_tile_batches_completed = 0
+        self._logical_tiles_completed = 0
+        self._tta_view_batches_completed = 0
+        self._tta_views_completed = 0
+        self._joint_network_forward_calls = 0
+        self._maximum_network_batch_size_observed = 0
+        self._network_batch_size_histogram: dict[int, int] = {}
+        self._tile_batch_size_histogram: dict[int, int] = {}
+        self._tta_batch_size_histogram: dict[int, int] = {}
+
+    def inference_runtime_provenance(self) -> dict[str, object]:
+        """Return JSON-safe execution counters without resetting them."""
+
+        requested = int(getattr(self, "tile_batch_size", 1))
+        adaptive = int(getattr(self, "_adaptive_tile_batch_size", requested))
+        requested_tta = int(getattr(self, "tta_batch_size", 1))
+        adaptive_tta = int(
+            getattr(self, "_adaptive_tta_batch_size", requested_tta)
+        )
+        histogram = getattr(self, "_tile_batch_size_histogram", {})
+        tta_histogram = getattr(self, "_tta_batch_size_histogram", {})
+        return {
+            "joint_network_forward_calls": int(
+                getattr(self, "_joint_network_forward_calls", 0)
+            ),
+            "maximum_network_batch_size_observed": int(
+                getattr(self, "_maximum_network_batch_size_observed", 0)
+            ),
+            "network_batch_size_histogram": {
+                str(size): int(count)
+                for size, count in sorted(
+                    getattr(self, "_network_batch_size_histogram", {}).items()
+                )
+            },
+            "network_batch_size_limit": max(requested, requested_tta),
+            "logical_tile_batches_completed": int(
+                getattr(self, "_logical_tile_batches_completed", 0)
+            ),
+            "logical_tiles_completed": int(
+                getattr(self, "_logical_tiles_completed", 0)
+            ),
+            "tile_batch_oom_fallback_count": int(
+                getattr(self, "_tile_batch_oom_fallback_count", 0)
+            ),
+            "tile_batch_size_adaptive_limit": adaptive,
+            "tile_batch_size_histogram": {
+                str(size): int(count) for size, count in sorted(histogram.items())
+            },
+            "tile_batch_size_requested": requested,
+            "tta_batch_oom_fallback_count": int(
+                getattr(self, "_tta_batch_oom_fallback_count", 0)
+            ),
+            "tta_batch_size_adaptive_limit": adaptive_tta,
+            "tta_batch_size_histogram": {
+                str(size): int(count)
+                for size, count in sorted(tta_histogram.items())
+            },
+            "tta_batch_size_requested": requested_tta,
+            "tta_view_batches_completed": int(
+                getattr(self, "_tta_view_batches_completed", 0)
+            ),
+            "tta_views_completed": int(getattr(self, "_tta_views_completed", 0)),
+        }
+
+    @staticmethod
+    def _is_out_of_memory_error(error: RuntimeError) -> bool:
+        return isinstance(error, torch.OutOfMemoryError) or (
+            "out of memory" in str(error).lower()
+        )
+
+    def _record_joint_forward(self, batch_size: int) -> None:
+        self._joint_network_forward_calls = int(
+            getattr(self, "_joint_network_forward_calls", 0)
+        ) + 1
+        self._maximum_network_batch_size_observed = max(
+            int(getattr(self, "_maximum_network_batch_size_observed", 0)),
+            batch_size,
+        )
+        histogram = getattr(self, "_network_batch_size_histogram", None)
+        if histogram is None:
+            histogram = {}
+            self._network_batch_size_histogram = histogram
+        histogram[batch_size] = histogram.get(batch_size, 0) + 1
+
+    def _record_completed_tile_batch(self, batch_size: int) -> None:
+        self._logical_tile_batches_completed = int(
+            getattr(self, "_logical_tile_batches_completed", 0)
+        ) + 1
+        self._logical_tiles_completed = int(
+            getattr(self, "_logical_tiles_completed", 0)
+        ) + batch_size
+        histogram = getattr(self, "_tile_batch_size_histogram", None)
+        if histogram is None:
+            histogram = {}
+            self._tile_batch_size_histogram = histogram
+        histogram[batch_size] = histogram.get(batch_size, 0) + 1
+
+    def _record_completed_tta_batch(self, batch_size: int) -> None:
+        self._tta_view_batches_completed = int(
+            getattr(self, "_tta_view_batches_completed", 0)
+        ) + 1
+        self._tta_views_completed = int(
+            getattr(self, "_tta_views_completed", 0)
+        ) + batch_size
+        histogram = getattr(self, "_tta_batch_size_histogram", None)
+        if histogram is None:
+            histogram = {}
+            self._tta_batch_size_histogram = histogram
+        histogram[batch_size] = histogram.get(batch_size, 0) + 1
+
     @staticmethod
     def _validate_joint_network_output(output: object) -> tuple[Tensor, Tensor]:
         if not isinstance(output, tuple) or len(output) != 2:
@@ -354,6 +519,7 @@ class JointNNUNetPredictor(nnUNetPredictor):
         return segmentation_logits, classification_logits
 
     def _forward_joint(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        self._record_joint_forward(int(x.shape[0]))
         return self._validate_joint_network_output(
             self.network(x, return_classification=True)
         )
@@ -363,22 +529,33 @@ class JointNNUNetPredictor(nnUNetPredictor):
         """Average segmentation logits and class probabilities over mirror TTA."""
 
         mirror_axes = self.allowed_mirroring_axes if self.use_mirroring else None
-        segmentation, classification_logits = self._forward_joint(x)
-        classification_probabilities = torch.softmax(
-            classification_logits.float(), dim=1
+        if mirror_axes and (
+            max(mirror_axes) > x.ndim - 3 or min(mirror_axes) < 0
+        ):
+            raise ValueError(
+                f"mirror axes {mirror_axes} do not match input shape {tuple(x.shape)}"
+            )
+        tensor_axes = (
+            tuple(axis + 2 for axis in mirror_axes) if mirror_axes else ()
         )
+        combinations = [
+            combination
+            for count in range(1, len(tensor_axes) + 1)
+            for combination in itertools.combinations(tensor_axes, count)
+        ]
 
-        if mirror_axes:
-            if max(mirror_axes) > x.ndim - 3 or min(mirror_axes) < 0:
-                raise ValueError(
-                    f"mirror axes {mirror_axes} do not match input shape {tuple(x.shape)}"
-                )
-            tensor_axes = tuple(axis + 2 for axis in mirror_axes)
-            combinations = [
-                combination
-                for count in range(1, len(tensor_axes) + 1)
-                for combination in itertools.combinations(tensor_axes, count)
-            ]
+        requested_tta_batch_size = int(getattr(self, "tta_batch_size", 1))
+        if requested_tta_batch_size < 1:
+            raise ValueError("tta_batch_size must be at least 1")
+
+        # Keep the batch-one arm byte-for-byte on the original execution path.
+        # It is the prospective reference for the causal speed comparison.
+        if requested_tta_batch_size == 1:
+            segmentation, classification_logits = self._forward_joint(x)
+            classification_probabilities = torch.softmax(
+                classification_logits.float(), dim=1
+            )
+            self._record_completed_tta_batch(1)
             for axes in combinations:
                 mirrored_segmentation, mirrored_classification_logits = self._forward_joint(
                     torch.flip(x, axes)
@@ -387,11 +564,111 @@ class JointNNUNetPredictor(nnUNetPredictor):
                 classification_probabilities = classification_probabilities + torch.softmax(
                     mirrored_classification_logits.float(), dim=1
                 )
+                self._record_completed_tta_batch(1)
             divisor = len(combinations) + 1
-            segmentation = segmentation / divisor
-            classification_probabilities = classification_probabilities / divisor
+            return JointPrediction(
+                segmentation / divisor,
+                classification_probabilities / divisor,
+            )
 
-        return JointPrediction(segmentation, classification_probabilities)
+        view_axes = [(), *combinations]
+        active_tta_batch_size = int(
+            getattr(
+                self,
+                "_adaptive_tta_batch_size",
+                requested_tta_batch_size,
+            )
+        )
+        segmentation_sum = None
+        classification_sum = None
+        view_index = 0
+        base_batch_size = x.shape[0]
+        # Tile and view batching share one microbatch ceiling. Thus configured
+        # size 2 never becomes a product batch of four: two tiles use one view
+        # per forward, while a one-tile case can pack two mirror views.
+        network_batch_size_limit = max(
+            int(getattr(self, "tile_batch_size", 1)),
+            requested_tta_batch_size,
+        )
+        active_tta_batch_size = min(
+            active_tta_batch_size,
+            max(1, network_batch_size_limit // base_batch_size),
+        )
+        while view_index < len(view_axes):
+            batch_axes = view_axes[view_index : view_index + active_tta_batch_size]
+            batched_input = None
+            try:
+                batched_input = torch.cat(
+                    [x if not axes else torch.flip(x, axes) for axes in batch_axes],
+                    dim=0,
+                )
+                batched_segmentation, batched_classification_logits = self._forward_joint(
+                    batched_input
+                )
+            except RuntimeError as error:
+                if (
+                    active_tta_batch_size == 1
+                    or not self._is_out_of_memory_error(error)
+                ):
+                    raise
+                del batched_input
+                batched_input = None
+                empty_cache(self.device)
+                active_tta_batch_size = max(1, active_tta_batch_size // 2)
+                self._adaptive_tta_batch_size = active_tta_batch_size
+                self._tta_batch_oom_fallback_count = int(
+                    getattr(self, "_tta_batch_oom_fallback_count", 0)
+                ) + 1
+                if self.verbose:
+                    print(
+                        "TTA-view batch ran out of memory; retrying the untouched "
+                        f"view group with batch size {active_tta_batch_size}"
+                    )
+                continue
+
+            view_count = len(batch_axes)
+            expected_network_batch = view_count * base_batch_size
+            if batched_segmentation.shape[0] != expected_network_batch:
+                raise ValueError("Segmentation batch cannot be restored to TTA views")
+            if batched_classification_logits.shape[0] != expected_network_batch:
+                raise ValueError("Classification batch cannot be restored to TTA views")
+            segmentation_views = batched_segmentation.reshape(
+                view_count, base_batch_size, *batched_segmentation.shape[1:]
+            )
+            probability_views = torch.softmax(
+                batched_classification_logits.float(), dim=1
+            ).reshape(
+                view_count,
+                base_batch_size,
+                batched_classification_logits.shape[1],
+            )
+            for local_index, axes in enumerate(batch_axes):
+                view_segmentation = segmentation_views[local_index]
+                if axes:
+                    view_segmentation = torch.flip(view_segmentation, axes)
+                if segmentation_sum is None:
+                    segmentation_sum = view_segmentation.clone()
+                    classification_sum = probability_views[local_index].clone()
+                else:
+                    segmentation_sum = segmentation_sum + view_segmentation
+                    classification_sum = classification_sum + probability_views[local_index]
+            self._record_completed_tta_batch(view_count)
+            view_index += view_count
+            del (
+                batched_classification_logits,
+                batched_input,
+                batched_segmentation,
+                probability_views,
+                segmentation_views,
+            )
+
+        if segmentation_sum is None or classification_sum is None:
+            raise RuntimeError("TTA prediction produced no views")
+        divisor = len(view_axes)
+        return JointPrediction(
+            segmentation_sum / divisor,
+            classification_sum / divisor,
+        )
 
     @torch.inference_mode()
     def _internal_predict_sliding_window_return_joint(
@@ -409,6 +686,7 @@ class JointNNUNetPredictor(nnUNetPredictor):
         classification_sum = None
         classification_count = 0
         workon = None
+        progress = None
 
         try:
             empty_cache(self.device)
@@ -431,30 +709,91 @@ class JointNNUNetPredictor(nnUNetPredictor):
             else:
                 gaussian = 1.0
 
-            iterator = tqdm(slicers, disable=not self.allow_tqdm)
-            for sliding_slice in iterator:
-                workon = torch.clone(
-                    data[sliding_slice][None], memory_format=torch.contiguous_format
-                ).to(self.device)
-                tile = self._internal_maybe_mirror_and_predict_joint(workon)
-                if tile.classification_probabilities.shape[0] != 1:
-                    raise ValueError("Sliding-window inference requires tile batch size 1")
-
-                tile_segmentation = tile.segmentation_logits[0].to(results_device)
-                if self.use_gaussian:
-                    tile_segmentation = tile_segmentation * gaussian
-                predicted_logits[sliding_slice] += tile_segmentation
-                n_predictions[sliding_slice[1:]] += gaussian
-
-                tile_probabilities = tile.classification_probabilities[0].to(
-                    device=results_device, dtype=torch.float32
+            requested_batch_size = int(getattr(self, "tile_batch_size", 1))
+            if requested_batch_size < 1:
+                raise ValueError("tile_batch_size must be at least 1")
+            active_batch_size = int(
+                getattr(self, "_adaptive_tile_batch_size", requested_batch_size)
+            )
+            progress = tqdm(total=len(slicers), disable=not self.allow_tqdm)
+            tile_index = 0
+            while tile_index < len(slicers):
+                batch_slicers = tuple(
+                    slicers[tile_index : tile_index + active_batch_size]
                 )
-                if classification_sum is None:
-                    classification_sum = torch.zeros_like(tile_probabilities)
-                elif classification_sum.shape != tile_probabilities.shape:
-                    raise ValueError("Classification output shape changed between tiles")
-                classification_sum += tile_probabilities
-                classification_count += 1
+                workon = None
+                try:
+                    workon = torch.stack(
+                        [
+                            torch.clone(
+                                data[sliding_slice],
+                                memory_format=torch.contiguous_format,
+                            )
+                            for sliding_slice in batch_slicers
+                        ],
+                        dim=0,
+                    ).to(self.device)
+                    tile = self._internal_maybe_mirror_and_predict_joint(workon)
+                except RuntimeError as error:
+                    if active_batch_size == 1 or not self._is_out_of_memory_error(error):
+                        raise
+                    del workon
+                    workon = None
+                    empty_cache(self.device)
+                    active_batch_size = max(1, active_batch_size // 2)
+                    self._adaptive_tile_batch_size = active_batch_size
+                    self._tile_batch_oom_fallback_count = int(
+                        getattr(self, "_tile_batch_oom_fallback_count", 0)
+                    ) + 1
+                    if self.verbose:
+                        print(
+                            "Tile batch ran out of memory; retrying the untouched "
+                            f"tile group with batch size {active_batch_size}"
+                        )
+                    continue
+
+                batch_count = len(batch_slicers)
+                if tile.segmentation_logits.shape[0] != batch_count:
+                    raise ValueError(
+                        "Segmentation output batch size changed during sliding-window "
+                        f"inference: expected {batch_count}, got "
+                        f"{tile.segmentation_logits.shape[0]}"
+                    )
+                if tile.classification_probabilities.shape[0] != batch_count:
+                    raise ValueError(
+                        "Classification output batch size changed during sliding-window "
+                        f"inference: expected {batch_count}, got "
+                        f"{tile.classification_probabilities.shape[0]}"
+                    )
+
+                # Deliberately accumulate in the original slicer order. Batched
+                # execution changes only network scheduling, not output weighting.
+                for batch_index, sliding_slice in enumerate(batch_slicers):
+                    tile_segmentation = tile.segmentation_logits[batch_index].to(
+                        results_device
+                    )
+                    if self.use_gaussian:
+                        tile_segmentation = tile_segmentation * gaussian
+                    predicted_logits[sliding_slice] += tile_segmentation
+                    n_predictions[sliding_slice[1:]] += gaussian
+
+                    tile_probabilities = tile.classification_probabilities[
+                        batch_index
+                    ].to(device=results_device, dtype=torch.float32)
+                    if classification_sum is None:
+                        classification_sum = torch.zeros_like(tile_probabilities)
+                    elif classification_sum.shape != tile_probabilities.shape:
+                        raise ValueError(
+                            "Classification output shape changed between tiles"
+                        )
+                    classification_sum += tile_probabilities
+                    classification_count += 1
+
+                self._record_completed_tile_batch(batch_count)
+                tile_index += batch_count
+                progress.update(batch_count)
+                del tile, workon
+                workon = None
 
             if classification_sum is None or classification_count == 0:
                 raise RuntimeError("Sliding-window prediction produced no tiles")
@@ -471,6 +810,9 @@ class JointNNUNetPredictor(nnUNetPredictor):
             empty_cache(self.device)
             empty_cache(results_device)
             raise
+        finally:
+            if progress is not None:
+                progress.close()
 
     def _predict_sliding_window_with_results_fallback(
         self,

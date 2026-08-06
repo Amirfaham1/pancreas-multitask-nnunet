@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "locked_at_utc": "2026-08-06T14:11:17.3603733Z",
+  "status": "locked_before_any_batched_tile_gpu_benchmark",
+  "development_basis": "Tile batch size 2 was chosen from the production training configuration's demonstrated batch-2 feasibility; no official-validation target or timing result selected it. Hardware identity is taken only from each measured runtime artifact.",
+  "comparison": {
+    "reference": "fresh_process_final_joint_predictor_with_tile_batch_size_1",
+    "candidate": "fresh_process_same_final_joint_predictor_with_tile_batch_size_2_and_tta_batch_size_2_under_a_shared_network_microbatch_limit_of_2",
+    "causal_difference": "network_scheduling_batches_consecutive tiles or consecutive mirror views up to a shared network batch of 2 only",
+    "contextual_stock_nnunet_reference": "optional_and_not_part_of_acceptance"
+  },
+  "fixed_contract": {
+    "checkpoint": "same_final_classifier_architecture_and_checkpoint_in_both_arms",
+    "device": "same_single_gpu",
+    "folds": [
+      0
+    ],
+    "gaussian_enabled": true,
+    "input_cases": "all_72_held_out_test_inputs_discovered_in_identical_directory",
+    "overwrite": true,
+    "preprocessing": "identical",
+    "segmentation_export": "identical",
+    "tile_step_size": 0.5,
+    "tta_enabled": true,
+    "reference_tta_batch_size": 1,
+    "candidate_tta_batch_size": 2
+  },
+  "timing": {
+    "arm_order": [
+      "reference",
+      "candidate",
+      "candidate",
+      "reference"
+    ],
+    "fresh_process_per_run": true,
+    "repeats_per_arm": 2,
+    "statistic": "arithmetic_mean_of_end_to_end_seconds_per_case_across_two_runs",
+    "scope": "model_initialization_plus_preprocessing_plus_inference_plus_export",
+    "warmup": "none"
+  },
+  "numerical_equivalence": {
+    "hard_mask_disagreeing_voxels_allowed": 0,
+    "subtype_decision_disagreements_allowed": 0,
+    "maximum_absolute_class_probability_delta": 1e-5,
+    "geometry_must_match_exactly": true
+  },
+  "acceptance": {
+    "candidate_mean_must_be_at_most_reference_fraction": 0.9,
+    "minimum_runtime_reduction_percent": 10.0,
+    "oom_fallbacks_allowed": 0,
+    "all_numerical_equivalence_checks_must_pass": true
+  }
+}

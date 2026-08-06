@@ -45,6 +45,9 @@ class _OrientationAwareJointNetwork(nn.Module):
 def _bare_predictor(
     network: nn.Module,
     predictor_class: type[JointNNUNetPredictor] = JointNNUNetPredictor,
+    *,
+    tile_batch_size: int = 1,
+    tta_batch_size: int = 1,
 ) -> JointNNUNetPredictor:
     predictor = object.__new__(predictor_class)
     predictor.network = network.eval()
@@ -58,6 +61,9 @@ def _bare_predictor(
     predictor.label_manager = SimpleNamespace(num_segmentation_heads=1)
     predictor.configuration_manager = SimpleNamespace(patch_size=(2, 2, 2))
     predictor.list_of_parameters = None
+    predictor.tile_batch_size = tile_batch_size
+    predictor.tta_batch_size = tta_batch_size
+    predictor.reset_inference_runtime_counters()
     return predictor
 
 
@@ -177,6 +183,183 @@ def test_tiles_are_averaged_locally_and_segmentation_is_stitched() -> None:
     assert torch.equal(prediction.segmentation_logits.float(), data)
     assert torch.allclose(prediction.classification_probabilities, expected)
     assert not hasattr(predictor, "classification_sum")
+
+
+class _BatchRecordingNetwork(nn.Module):
+    def __init__(self, *, fail_batched_once: bool = False) -> None:
+        super().__init__()
+        self.fail_batched_once = fail_batched_once
+        self.batch_sizes: list[int] = []
+
+    def forward(self, x, *, return_classification=False):
+        self.batch_sizes.append(int(x.shape[0]))
+        if self.fail_batched_once and x.shape[0] > 1:
+            self.fail_batched_once = False
+            raise torch.OutOfMemoryError("CUDA out of memory in deterministic test")
+        segmentation = x[:, :1] * 1.25
+        case_mean = x[:, 0].mean(dim=(1, 2, 3))
+        classification = torch.stack((case_mean, -case_mean), dim=1)
+        return (segmentation, classification) if return_classification else segmentation
+
+
+def _four_tile_fixture() -> tuple[torch.Tensor, tuple[tuple[slice, ...], ...]]:
+    data = torch.arange(32, dtype=torch.float32).reshape(1, 8, 2, 2) / 10
+    slicers = tuple(
+        (slice(None), slice(start, start + 2), slice(0, 2), slice(0, 2))
+        for start in range(0, 8, 2)
+    )
+    return data, slicers
+
+
+def test_batched_tiles_preserve_sequential_aggregation_contract() -> None:
+    data, slicers = _four_tile_fixture()
+    sequential_network = _BatchRecordingNetwork()
+    batched_network = _BatchRecordingNetwork()
+    sequential = _bare_predictor(sequential_network, tile_batch_size=1)
+    batched = _bare_predictor(batched_network, tile_batch_size=2)
+
+    expected = sequential._internal_predict_sliding_window_return_joint(
+        data, slicers, False
+    )
+    actual = batched._internal_predict_sliding_window_return_joint(data, slicers, False)
+
+    assert torch.equal(actual.segmentation_logits, expected.segmentation_logits)
+    assert torch.equal(
+        actual.classification_probabilities,
+        expected.classification_probabilities,
+    )
+    assert sequential_network.batch_sizes == [1, 1, 1, 1]
+    assert batched_network.batch_sizes == [2, 2]
+    assert batched.inference_runtime_provenance() == {
+        "joint_network_forward_calls": 2,
+        "maximum_network_batch_size_observed": 2,
+        "network_batch_size_histogram": {"2": 2},
+        "network_batch_size_limit": 2,
+        "logical_tile_batches_completed": 2,
+        "logical_tiles_completed": 4,
+        "tile_batch_oom_fallback_count": 0,
+        "tile_batch_size_adaptive_limit": 2,
+        "tile_batch_size_histogram": {"2": 2},
+        "tile_batch_size_requested": 2,
+        "tta_batch_oom_fallback_count": 0,
+        "tta_batch_size_adaptive_limit": 1,
+        "tta_batch_size_histogram": {"1": 2},
+        "tta_batch_size_requested": 1,
+        "tta_view_batches_completed": 2,
+        "tta_views_completed": 2,
+    }
+
+
+def test_tile_batch_oom_retries_untouched_group_once_at_batch_one() -> None:
+    data, slicers = _four_tile_fixture()
+    expected_predictor = _bare_predictor(_BatchRecordingNetwork(), tile_batch_size=1)
+    fallback_network = _BatchRecordingNetwork(fail_batched_once=True)
+    fallback_predictor = _bare_predictor(fallback_network, tile_batch_size=2)
+
+    expected = expected_predictor._internal_predict_sliding_window_return_joint(
+        data, slicers, False
+    )
+    actual = fallback_predictor._internal_predict_sliding_window_return_joint(
+        data, slicers, False
+    )
+
+    assert torch.equal(actual.segmentation_logits, expected.segmentation_logits)
+    assert torch.equal(
+        actual.classification_probabilities,
+        expected.classification_probabilities,
+    )
+    assert fallback_network.batch_sizes == [2, 1, 1, 1, 1]
+    provenance = fallback_predictor.inference_runtime_provenance()
+    assert provenance["tile_batch_oom_fallback_count"] == 1
+    assert provenance["tile_batch_size_adaptive_limit"] == 1
+    assert provenance["logical_tiles_completed"] == 4
+    assert provenance["tile_batch_size_histogram"] == {"1": 4}
+
+
+def test_tile_and_tta_view_batching_preserve_all_eight_mirror_views() -> None:
+    data, slicers = _four_tile_fixture()
+    sequential_network = _BatchRecordingNetwork()
+    batched_network = _BatchRecordingNetwork()
+    sequential = _bare_predictor(
+        sequential_network, tile_batch_size=1, tta_batch_size=1
+    )
+    batched = _bare_predictor(
+        batched_network, tile_batch_size=2, tta_batch_size=2
+    )
+    for predictor in (sequential, batched):
+        predictor.use_mirroring = True
+        predictor.allowed_mirroring_axes = (0, 1, 2)
+
+    expected = sequential._internal_predict_sliding_window_return_joint(
+        data, slicers, False
+    )
+    actual = batched._internal_predict_sliding_window_return_joint(data, slicers, False)
+
+    assert torch.equal(actual.segmentation_logits, expected.segmentation_logits)
+    assert torch.equal(
+        actual.classification_probabilities,
+        expected.classification_probabilities,
+    )
+    assert sequential_network.batch_sizes == [1] * 32
+    assert batched_network.batch_sizes == [2] * 16
+    provenance = batched.inference_runtime_provenance()
+    assert provenance["logical_tiles_completed"] == 4
+    assert provenance["tta_views_completed"] == 16
+    assert provenance["joint_network_forward_calls"] == 16
+    assert provenance["maximum_network_batch_size_observed"] == 2
+    assert provenance["tta_batch_size_histogram"] == {"1": 16}
+
+
+def test_one_tile_uses_two_view_batches_under_shared_microbatch_limit() -> None:
+    sequential_network = _BatchRecordingNetwork()
+    batched_network = _BatchRecordingNetwork()
+    sequential = _bare_predictor(sequential_network, tta_batch_size=1)
+    batched = _bare_predictor(batched_network, tta_batch_size=2)
+    for predictor in (sequential, batched):
+        predictor.use_mirroring = True
+        predictor.allowed_mirroring_axes = (0, 1, 2)
+    image = torch.arange(8, dtype=torch.float32).reshape(1, 1, 2, 2, 2)
+
+    expected = sequential._internal_maybe_mirror_and_predict_joint(image)
+    actual = batched._internal_maybe_mirror_and_predict_joint(image)
+
+    assert torch.equal(actual.segmentation_logits, expected.segmentation_logits)
+    assert torch.equal(
+        actual.classification_probabilities,
+        expected.classification_probabilities,
+    )
+    assert sequential_network.batch_sizes == [1] * 8
+    assert batched_network.batch_sizes == [2] * 4
+    provenance = batched.inference_runtime_provenance()
+    assert provenance["tta_views_completed"] == 8
+    assert provenance["tta_batch_size_histogram"] == {"2": 4}
+
+
+def test_tta_batch_oom_retries_untouched_views_at_batch_one() -> None:
+    network = _BatchRecordingNetwork(fail_batched_once=True)
+    fallback = _bare_predictor(network, tile_batch_size=1, tta_batch_size=2)
+    fallback.use_mirroring = True
+    fallback.allowed_mirroring_axes = (0,)
+    expected = _bare_predictor(_BatchRecordingNetwork(), tta_batch_size=1)
+    expected.use_mirroring = True
+    expected.allowed_mirroring_axes = (0,)
+    image = torch.arange(8, dtype=torch.float32).reshape(1, 1, 2, 2, 2)
+
+    expected_prediction = expected._internal_maybe_mirror_and_predict_joint(image)
+    actual = fallback._internal_maybe_mirror_and_predict_joint(image)
+
+    assert torch.equal(
+        actual.segmentation_logits, expected_prediction.segmentation_logits
+    )
+    assert torch.equal(
+        actual.classification_probabilities,
+        expected_prediction.classification_probabilities,
+    )
+    assert network.batch_sizes == [2, 1, 1]
+    provenance = fallback.inference_runtime_provenance()
+    assert provenance["tta_batch_oom_fallback_count"] == 1
+    assert provenance["tta_batch_size_adaptive_limit"] == 1
+    assert provenance["tta_views_completed"] == 2
 
 
 class _FoldStateNetwork(nn.Module):

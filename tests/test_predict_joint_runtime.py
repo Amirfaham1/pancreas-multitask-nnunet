@@ -53,11 +53,34 @@ def test_cpu_run_writes_end_to_end_runtime_json(
                 checkpoint_name=checkpoint_name,
             )
 
+        def reset_inference_runtime_counters(self) -> None:
+            pass
+
+        def inference_runtime_provenance(self) -> dict[str, object]:
+            return {
+                "joint_network_forward_calls": 8,
+                "maximum_network_batch_size_observed": 2,
+                "network_batch_size_histogram": {"2": 8},
+                "network_batch_size_limit": 2,
+                "logical_tile_batches_completed": 4,
+                "logical_tiles_completed": 8,
+                "tile_batch_oom_fallback_count": 0,
+                "tile_batch_size_adaptive_limit": 2,
+                "tile_batch_size_histogram": {"2": 4},
+                "tile_batch_size_requested": 2,
+                "tta_batch_oom_fallback_count": 0,
+                "tta_batch_size_adaptive_limit": 2,
+                "tta_batch_size_histogram": {"2": 4},
+                "tta_batch_size_requested": 2,
+                "tta_view_batches_completed": 4,
+                "tta_views_completed": 8,
+            }
+
         def predict_from_files_joint(self, *args: object, **kwargs: object) -> list[object]:
             events.append("predict_and_export")
             predicted["args"] = args
             predicted["kwargs"] = kwargs
-            return [object(), object()]
+            return [SimpleNamespace(case_id="case_b"), SimpleNamespace(case_id="case_a")]
 
     clock_values = iter((10.0, 14.0))
 
@@ -70,6 +93,10 @@ def test_cpu_run_writes_end_to_end_runtime_json(
     monkeypatch.setattr(module.torch, "set_num_threads", lambda _threads: None)
 
     runtime_path = tmp_path / "artifacts" / "runtime.json"
+    for fold in (0, 1):
+        fold_directory = tmp_path / "model" / f"fold_{fold}"
+        fold_directory.mkdir(parents=True)
+        (fold_directory / "checkpoint_final.pth").write_bytes(f"fold-{fold}".encode())
     args = module.build_parser().parse_args(
         [
             "--input",
@@ -89,7 +116,12 @@ def test_cpu_run_writes_end_to_end_runtime_json(
             "cpu",
             "--tile-step-size",
             "0.75",
+            "--tile-batch-size",
+            "2",
+            "--tta-batch-size",
+            "2",
             "--disable-tta",
+            "--overwrite",
         ]
     )
 
@@ -98,22 +130,42 @@ def test_cpu_run_writes_end_to_end_runtime_json(
     assert events == ["construct", "clock", "initialize", "predict_and_export", "clock"]
     assert initialized["use_folds"] == (0, 1)
     assert initialized["checkpoint_name"] == "checkpoint_final.pth"
+    assert initialized["constructor"]["tile_batch_size"] == 2
+    assert initialized["constructor"]["tta_batch_size"] == 2
     assert predicted["args"] == (args.input, args.output)
 
     artifact = json.loads(runtime_path.read_text(encoding="utf-8"))
-    assert artifact == {
-        "case_count": 2,
-        "checkpoint": "checkpoint_final.pth",
-        "device": "cpu",
-        "folds": [0, 1],
-        "gaussian_enabled": True,
-        "mean_seconds_per_case": 2.0,
-        "peak_allocated_mib": None,
-        "peak_reserved_mib": None,
-        "tile_step_size": 0.75,
-        "total_seconds": 4.0,
-        "tta_enabled": False,
-    }
+    assert artifact["case_count"] == 2
+    assert artifact["case_ids"] == ["case_a", "case_b"]
+    assert artifact["case_ids_sha256"] == module._case_ids_sha256(
+        ["case_a", "case_b"]
+    )
+    assert artifact["checkpoint"] == "checkpoint_final.pth"
+    assert artifact["checkpoint_files"] == [
+        {
+            "fold": str(fold),
+            "sha256": module._sha256(
+                tmp_path / "model" / f"fold_{fold}" / "checkpoint_final.pth"
+            ),
+            "size_bytes": 6,
+        }
+        for fold in (0, 1)
+    ]
+    assert artifact["device"] == "cpu"
+    assert artifact["folds"] == [0, 1]
+    assert artifact["gaussian_enabled"] is True
+    assert artifact["inference_execution"]["tile_batch_size_requested"] == 2
+    assert artifact["mean_seconds_per_case"] == 2.0
+    assert artifact["overwrite"] is True
+    assert artifact["peak_allocated_mib"] is None
+    assert artifact["peak_reserved_mib"] is None
+    assert artifact["tile_step_size"] == 0.75
+    assert artifact["timing_scope"] == (
+        "fresh_process_model_initialization_preprocessing_inference_export"
+    )
+    assert artifact["total_seconds"] == 4.0
+    assert artifact["tta_enabled"] is False
+    assert artifact["warmup_policy"] == "none_fresh_process_end_to_end"
     assert not list(runtime_path.parent.glob(".runtime.json.*.tmp"))
     output = capsys.readouterr().out
     assert "Runtime: 4.00 s total, 2.00 s/case" in output

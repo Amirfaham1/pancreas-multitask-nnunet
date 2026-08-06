@@ -4,11 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import multiprocessing
+import os
+import platform
 import sys
 import tempfile
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import torch
@@ -63,6 +67,55 @@ def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _checkpoint_provenance(
+    model_directory: Path,
+    selected_folds: tuple[int | str, ...] | None,
+    checkpoint_name: str,
+) -> list[dict[str, object]]:
+    """Hash the exact fold checkpoint files outside the timed region."""
+
+    model_directory = model_directory.expanduser().resolve()
+    if selected_folds is None:
+        fold_directories = sorted(
+            path
+            for path in model_directory.glob("fold_*")
+            if path.is_dir() and (path / checkpoint_name).is_file()
+        )
+    else:
+        fold_directories = [model_directory / f"fold_{fold}" for fold in selected_folds]
+    if not fold_directories:
+        raise FileNotFoundError(
+            f"No fold checkpoint named {checkpoint_name!r} found in {model_directory}"
+        )
+
+    provenance: list[dict[str, object]] = []
+    for fold_directory in fold_directories:
+        checkpoint_path = fold_directory / checkpoint_name
+        if not checkpoint_path.is_file():
+            raise FileNotFoundError(f"Checkpoint does not exist: {checkpoint_path}")
+        provenance.append(
+            {
+                "fold": fold_directory.name.removeprefix("fold_"),
+                "sha256": _sha256(checkpoint_path),
+                "size_bytes": checkpoint_path.stat().st_size,
+            }
+        )
+    return provenance
+
+
+def _case_ids_sha256(case_ids: list[str]) -> str:
+    canonical = "".join(f"{case_id}\n" for case_id in sorted(case_ids))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -127,6 +180,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Sliding-window step as a patch-size fraction (default: 0.5)",
     )
     parser.add_argument(
+        "--tile-batch-size",
+        type=int,
+        default=1,
+        help=(
+            "Number of consecutive spatial tiles per network forward (default: 1). "
+            "An OOM is retried at a smaller batch and recorded in runtime evidence."
+        ),
+    )
+    parser.add_argument(
+        "--tta-batch-size",
+        type=int,
+        default=1,
+        help=(
+            "Number of mirror orientations packed per network forward (default: 1). "
+            "All requested TTA views are still evaluated and averaged."
+        ),
+    )
+    parser.add_argument(
         "--disable-tta",
         action="store_true",
         help="Disable nnU-Net mirror test-time augmentation",
@@ -159,6 +230,10 @@ def build_parser() -> argparse.ArgumentParser:
 def run(args: argparse.Namespace) -> int:
     if not 0 < args.tile_step_size <= 1:
         raise ValueError("--tile-step-size must be in (0, 1]")
+    if args.tile_batch_size < 1:
+        raise ValueError("--tile-batch-size must be at least 1")
+    if args.tta_batch_size < 1:
+        raise ValueError("--tta-batch-size must be at least 1")
     selected_folds = _selected_folds(args.folds)
     device = torch.device(args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
@@ -176,8 +251,16 @@ def run(args: argparse.Namespace) -> int:
             # PyTorch permits setting this only once per process.
             pass
 
+    model_directory = args.model.expanduser().resolve()
+    checkpoint_provenance = _checkpoint_provenance(
+        model_directory,
+        selected_folds,
+        args.checkpoint,
+    )
     predictor = JointNNUNetPredictor(
         tile_step_size=args.tile_step_size,
+        tile_batch_size=args.tile_batch_size,
+        tta_batch_size=args.tta_batch_size,
         use_gaussian=not args.disable_gaussian,
         use_mirroring=not args.disable_tta,
         perform_everything_on_device=not args.results_on_cpu,
@@ -190,12 +273,14 @@ def run(args: argparse.Namespace) -> int:
     if device.type == "cuda":
         torch.cuda.synchronize(device)
         torch.cuda.reset_peak_memory_stats(device)
+    started_at_utc = datetime.now(UTC).isoformat()
     started_at = time.perf_counter()
     predictor.initialize_from_trained_model_folder(
-        str(args.model.resolve()),
+        str(model_directory),
         use_folds=selected_folds,
         checkpoint_name=args.checkpoint,
     )
+    predictor.reset_inference_runtime_counters()
     results = predictor.predict_from_files_joint(
         args.input,
         args.output,
@@ -209,6 +294,9 @@ def run(args: argparse.Namespace) -> int:
     total_seconds = time.perf_counter() - started_at
 
     case_count = len(results)
+    case_ids = sorted(str(result.case_id) for result in results)
+    if len(case_ids) != len(set(case_ids)):
+        raise RuntimeError("Predictor returned duplicate case IDs")
     mean_seconds_per_case = total_seconds / case_count if case_count else None
     if device.type == "cuda":
         bytes_per_mib = 1024**2
@@ -218,18 +306,40 @@ def run(args: argparse.Namespace) -> int:
         peak_allocated_mib = None
         peak_reserved_mib = None
 
+    if device.type == "cuda":
+        device_name = torch.cuda.get_device_name(device)
+        device_capability: list[int] | None = list(torch.cuda.get_device_capability(device))
+    else:
+        device_name = platform.processor() or platform.machine()
+        device_capability = None
+
     runtime = {
         "case_count": case_count,
+        "case_ids": case_ids,
+        "case_ids_sha256": _case_ids_sha256(case_ids),
         "checkpoint": args.checkpoint,
+        "checkpoint_files": checkpoint_provenance,
+        "cuda_runtime_version": torch.version.cuda,
+        "cudnn_version": torch.backends.cudnn.version(),
         "device": str(device),
+        "device_capability": device_capability,
+        "device_name": device_name,
         "folds": list(selected_folds) if selected_folds is not None else "auto",
         "gaussian_enabled": not args.disable_gaussian,
+        "inference_execution": predictor.inference_runtime_provenance(),
         "mean_seconds_per_case": mean_seconds_per_case,
+        "overwrite": bool(args.overwrite),
         "peak_allocated_mib": peak_allocated_mib,
         "peak_reserved_mib": peak_reserved_mib,
+        "process_id": os.getpid(),
+        "python_version": platform.python_version(),
+        "started_at_utc": started_at_utc,
         "tile_step_size": args.tile_step_size,
+        "timing_scope": "fresh_process_model_initialization_preprocessing_inference_export",
         "total_seconds": total_seconds,
+        "torch_version": torch.__version__,
         "tta_enabled": not args.disable_tta,
+        "warmup_policy": "none_fresh_process_end_to_end",
     }
     if args.runtime_json is not None:
         _write_json_atomic(args.runtime_json, runtime)
