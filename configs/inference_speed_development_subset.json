@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "locked_at_utc": "2026-08-06T14:26:26.9679652Z",
+  "status": "fixed_before_any_20_case_gpu_timing",
+  "purpose": "train_only_development_timing_subset_not_final_acceptance",
+  "source": {
+    "split": "train",
+    "eligible_case_count": 252,
+    "official_validation_or_test_inputs_or_labels_used": false,
+    "preprocessed_shape_metadata_only": true
+  },
+  "inference_geometry": {
+    "patch_size": [64, 128, 192],
+    "tile_step_size": 0.5,
+    "eligible_tile_count_distribution": {
+      "1": 94,
+      "2": 83,
+      "3": 1,
+      "4": 55,
+      "6": 1,
+      "8": 16,
+      "12": 2
+    }
+  },
+  "selection": {
+    "rule": "Within each predeclared tile-count stratum, sort ascending SHA256('speed-dev-v1:' + case_id) and take the fixed quota.",
+    "quotas": {
+      "1": 7,
+      "2": 7,
+      "3": 1,
+      "4": 3,
+      "8": 1,
+      "12": 1
+    },
+    "case_count": 20
+  },
+  "cases": [
+    {"case_id": "quiz_0_066", "preprocessed_shape": [48, 112, 169], "tile_count": 1},
+    {"case_id": "quiz_0_139", "preprocessed_shape": [53, 108, 170], "tile_count": 1},
+    {"case_id": "quiz_0_145", "preprocessed_shape": [51, 90, 130], "tile_count": 1},
+    {"case_id": "quiz_0_224", "preprocessed_shape": [64, 95, 163], "tile_count": 1},
+    {"case_id": "quiz_0_430", "preprocessed_shape": [120, 70, 142], "tile_count": 3},
+    {"case_id": "quiz_0_475", "preprocessed_shape": [62, 146, 211], "tile_count": 4},
+    {"case_id": "quiz_1_147", "preprocessed_shape": [65, 128, 176], "tile_count": 2},
+    {"case_id": "quiz_1_177", "preprocessed_shape": [61, 92, 164], "tile_count": 1},
+    {"case_id": "quiz_1_274", "preprocessed_shape": [53, 115, 200], "tile_count": 2},
+    {"case_id": "quiz_1_469", "preprocessed_shape": [78, 95, 159], "tile_count": 2},
+    {"case_id": "quiz_1_506", "preprocessed_shape": [72, 89, 183], "tile_count": 2},
+    {"case_id": "quiz_2_214", "preprocessed_shape": [72, 107, 156], "tile_count": 2},
+    {"case_id": "quiz_2_218", "preprocessed_shape": [35, 151, 187], "tile_count": 2},
+    {"case_id": "quiz_2_265", "preprocessed_shape": [59, 116, 163], "tile_count": 1},
+    {"case_id": "quiz_2_268", "preprocessed_shape": [76, 206, 212], "tile_count": 12},
+    {"case_id": "quiz_2_272", "preprocessed_shape": [34, 107, 170], "tile_count": 1},
+    {"case_id": "quiz_2_314", "preprocessed_shape": [48, 129, 212], "tile_count": 4},
+    {"case_id": "quiz_2_382", "preprocessed_shape": [78, 133, 216], "tile_count": 8},
+    {"case_id": "quiz_2_442", "preprocessed_shape": [60, 118, 196], "tile_count": 2},
+    {"case_id": "quiz_2_501", "preprocessed_shape": [75, 137, 160], "tile_count": 4}
+  ],
+  "planned_use": {
+    "launcher": "Run-InferenceSpeedBenchmark.ps1",
+    "expected_case_count": 20,
+    "arm_order": ["reference", "candidate", "candidate", "reference"],
+    "gpu_launch_requires_root_authorization_after_classifier_extraction": true
+  }
+}

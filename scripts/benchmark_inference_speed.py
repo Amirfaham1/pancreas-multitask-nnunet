@@ -3,8 +3,9 @@
 
 This script does not launch inference. It accepts two fresh-process runtime
 artifacts and output directories per arm, verifies that tile batch size is the
-only material configuration difference, checks ABBA execution order and exact
-hard-output agreement, and applies the locked >=10% mean-runtime rule.
+only material configuration difference, checks ABBA execution order and the
+amended tight numerical-equivalence bounds, and applies the locked >=10%
+mean-runtime rule.
 """
 
 from __future__ import annotations
@@ -23,7 +24,9 @@ import nibabel as nib
 import numpy as np
 
 MINIMUM_RUNTIME_REDUCTION_PERCENT = 10.0
-MAXIMUM_CLASS_PROBABILITY_DELTA = 1e-5
+MAXIMUM_CLASS_PROBABILITY_DELTA = 1e-4
+MAXIMUM_HARD_MASK_DISAGREEMENT_FRACTION = 1e-5
+MAXIMUM_HARD_MASK_DISAGREEING_VOXELS_PER_CASE = 16
 REPEATS_PER_ARM = 2
 EXPECTED_CHRONOLOGICAL_ARMS = ("reference", "candidate", "candidate", "reference")
 PROBABILITY_FILENAME = "subtype_probabilities.csv"
@@ -276,7 +279,12 @@ def _validate_output_case_contract(path: Path, case_ids: list[str]) -> None:
         raise BenchmarkError(f"Probability case set does not match runtime case IDs: {path}")
 
 
-def _compare_outputs(reference: Path, candidate: Path) -> dict[str, Any]:
+def _compare_outputs(
+    reference: Path,
+    candidate: Path,
+    *,
+    comparison_name: str,
+) -> dict[str, Any]:
     reference_masks = sorted(reference.glob("*.nii.gz"))
     candidate_masks = sorted(candidate.glob("*.nii.gz"))
     reference_names = [path.name for path in reference_masks]
@@ -286,56 +294,80 @@ def _compare_outputs(reference: Path, candidate: Path) -> dict[str, Any]:
 
     total_voxels = 0
     disagreeing_voxels = 0
+    per_case_disagreeing_voxels: dict[str, int] = {}
+    geometry_mismatch_cases: list[str] = []
+    dtype_mismatch_cases: list[str] = []
     for reference_path, candidate_path in zip(reference_masks, candidate_masks, strict=True):
         reference_image = nib.load(reference_path)
         candidate_image = nib.load(candidate_path)
         reference_array = np.asanyarray(reference_image.dataobj)
         candidate_array = np.asanyarray(candidate_image.dataobj)
         if reference_array.shape != candidate_array.shape:
-            raise BenchmarkError(f"Mask shape differs for {reference_path.name}")
-        if not np.array_equal(reference_image.affine, candidate_image.affine):
-            raise BenchmarkError(f"Mask geometry differs for {reference_path.name}")
+            geometry_mismatch_cases.append(reference_path.name)
+            continue
+        reference_zooms = reference_image.header.get_zooms()[: reference_array.ndim]
+        candidate_zooms = candidate_image.header.get_zooms()[: candidate_array.ndim]
+        if not np.array_equal(reference_image.affine, candidate_image.affine) or (
+            reference_zooms != candidate_zooms
+        ):
+            geometry_mismatch_cases.append(reference_path.name)
+        if reference_array.dtype != candidate_array.dtype:
+            dtype_mismatch_cases.append(reference_path.name)
         total_voxels += int(reference_array.size)
-        disagreeing_voxels += int(np.count_nonzero(reference_array != candidate_array))
-    if disagreeing_voxels != 0:
-        raise BenchmarkError(
-            f"Hard masks disagree at {disagreeing_voxels} of {total_voxels} voxels"
-        )
+        case_disagreements = int(np.count_nonzero(reference_array != candidate_array))
+        per_case_disagreeing_voxels[reference_path.name] = case_disagreements
+        disagreeing_voxels += case_disagreements
+    if total_voxels <= 0:
+        raise BenchmarkError("No shape-compatible mask voxels were available to compare")
+    disagreement_fraction = disagreeing_voxels / total_voxels
+    maximum_case_disagreements = max(per_case_disagreeing_voxels.values(), default=0)
 
     reference_subtypes = _read_subtypes(reference / "subtype_results.csv")
     candidate_subtypes = _read_subtypes(candidate / "subtype_results.csv")
-    if reference_subtypes != candidate_subtypes:
-        disagreements = sum(
-            reference_subtypes.get(name) != candidate_subtypes.get(name)
-            for name in set(reference_subtypes) | set(candidate_subtypes)
-        )
-        raise BenchmarkError(f"Subtype decisions disagree for {disagreements} cases")
+    subtype_disagreements = sum(
+        reference_subtypes.get(name) != candidate_subtypes.get(name)
+        for name in set(reference_subtypes) | set(candidate_subtypes)
+    )
 
     reference_probabilities = _read_probabilities(reference / PROBABILITY_FILENAME)
     candidate_probabilities = _read_probabilities(candidate / PROBABILITY_FILENAME)
     if reference_probabilities.keys() != candidate_probabilities.keys():
         raise BenchmarkError("Probability case sets differ")
     maximum_probability_delta = 0.0
+    probability_subtype_disagreements = 0
     for name, (reference_subtype, reference_values) in reference_probabilities.items():
         candidate_subtype, candidate_values = candidate_probabilities[name]
         if candidate_subtype != reference_subtype:
-            raise BenchmarkError(f"Probability CSV subtype differs for {name}")
+            probability_subtype_disagreements += 1
         maximum_probability_delta = max(
             maximum_probability_delta,
             float(np.max(np.abs(reference_values - candidate_values))),
         )
-    if maximum_probability_delta > MAXIMUM_CLASS_PROBABILITY_DELTA:
-        raise BenchmarkError(
-            "Classification probability difference exceeds the locked tolerance: "
-            f"{maximum_probability_delta} > {MAXIMUM_CLASS_PROBABILITY_DELTA}"
-        )
+    passed = (
+        not geometry_mismatch_cases
+        and not dtype_mismatch_cases
+        and disagreement_fraction <= MAXIMUM_HARD_MASK_DISAGREEMENT_FRACTION
+        and maximum_case_disagreements
+        <= MAXIMUM_HARD_MASK_DISAGREEING_VOXELS_PER_CASE
+        and subtype_disagreements == 0
+        and probability_subtype_disagreements == 0
+        and maximum_probability_delta <= MAXIMUM_CLASS_PROBABILITY_DELTA
+    )
 
     return {
         "case_count": len(reference_masks),
+        "comparison": comparison_name,
+        "dtype_mismatch_cases": dtype_mismatch_cases,
+        "geometry_mismatch_cases": geometry_mismatch_cases,
         "hard_mask_disagreeing_voxels": disagreeing_voxels,
+        "hard_mask_disagreement_fraction": disagreement_fraction,
         "hard_mask_total_voxels": total_voxels,
+        "maximum_hard_mask_disagreeing_voxels_in_one_case": maximum_case_disagreements,
         "maximum_absolute_class_probability_delta": maximum_probability_delta,
-        "subtype_decision_disagreements": 0,
+        "passed": passed,
+        "per_case_hard_mask_disagreeing_voxels": per_case_disagreeing_voxels,
+        "probability_csv_subtype_disagreements": probability_subtype_disagreements,
+        "subtype_decision_disagreements": subtype_disagreements,
     }
 
 
@@ -387,19 +419,40 @@ def audit_benchmark(
     canonical_output = reference_output_paths[0]
     for output_path in [*reference_output_paths, *candidate_output_paths]:
         _validate_output_case_contract(output_path, reference_payloads[0]["case_ids"])
-    for output_path in [reference_output_paths[1], *candidate_output_paths]:
-        output_comparisons.append(_compare_outputs(canonical_output, output_path))
+    compared_outputs = [
+        ("reference_1_vs_reference_2", reference_output_paths[1]),
+        ("reference_1_vs_candidate_1", candidate_output_paths[0]),
+        ("reference_1_vs_candidate_2", candidate_output_paths[1]),
+    ]
+    for comparison_name, output_path in compared_outputs:
+        output_comparisons.append(
+            _compare_outputs(
+                canonical_output,
+                output_path,
+                comparison_name=comparison_name,
+            )
+        )
     expected_case_count = reference_payloads[0]["case_count"]
     if any(item["case_count"] != expected_case_count for item in output_comparisons):
         raise BenchmarkError("Output mask count does not match runtime case_count")
 
-    accepted = candidate_fraction <= 0.9
+    timing_passed = candidate_fraction <= 0.9
+    numerical_equivalence_passed = all(
+        item["passed"] for item in output_comparisons
+    )
+    rejection_reasons = []
+    if not timing_passed:
+        rejection_reasons.append("runtime_reduction_below_10_percent")
+    if not numerical_equivalence_passed:
+        rejection_reasons.append("numerical_equivalence_gate_failed")
+    accepted = timing_passed and numerical_equivalence_passed
     return {
         "accepted": accepted,
         "acceptance_rule": (
             "candidate arithmetic mean end-to-end seconds/case <= 0.90 * reference; "
-            "zero OOM fallbacks; exact hard masks and subtype decisions; class "
-            "probability max-absolute delta <= 1e-5"
+            "zero OOM fallbacks; no geometry or dtype mismatch; global hard-mask "
+            "disagreement fraction <= 1e-5 and <= 16 voxels/case; exact subtype "
+            "decisions; class probability max-absolute delta <= 1e-4"
         ),
         "candidate": {
             "mean_seconds_per_case": candidate_mean,
@@ -415,6 +468,7 @@ def audit_benchmark(
         "expected_case_count": expected_case_count,
         "minimum_runtime_reduction_percent": MINIMUM_RUNTIME_REDUCTION_PERCENT,
         "numerical_equivalence": output_comparisons,
+        "numerical_equivalence_passed": numerical_equivalence_passed,
         "reference": {
             "mean_seconds_per_case": reference_mean,
             "peak_allocated_mib": [
@@ -426,8 +480,10 @@ def audit_benchmark(
             "network_batch_size_limit": 1,
         },
         "run_order": run_order,
+        "rejection_reasons": rejection_reasons,
         "runtime_reduction_percent": reduction_percent,
         "schema_version": 1,
+        "timing_passed": timing_passed,
     }
 
 

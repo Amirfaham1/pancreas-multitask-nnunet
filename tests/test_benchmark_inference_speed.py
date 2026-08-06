@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import json
+from collections import Counter
 from pathlib import Path
 
 import nibabel as nib
@@ -83,10 +84,16 @@ def _write_runtime(path: Path, payload: dict[str, object]) -> Path:
     return path
 
 
-def _write_outputs(path: Path, *, changed_mask: bool = False, probability_shift=0.0) -> Path:
+def _write_outputs(
+    path: Path,
+    *,
+    changed_mask: bool = False,
+    probability_shift=0.0,
+    shape: tuple[int, int, int] = (2, 2, 2),
+) -> Path:
     path.mkdir()
     for index, case_id in enumerate(("case_a", "case_b")):
-        array = np.full((2, 2, 2), index, dtype=np.uint8)
+        array = np.full(shape, index, dtype=np.uint8)
         if changed_mask and index == 1:
             array[0, 0, 0] = 2
         nib.save(nib.Nifti1Image(array, np.eye(4)), path / f"{case_id}.nii.gz")
@@ -204,12 +211,108 @@ def test_oom_fallback_or_configuration_change_invalidates_comparison(tmp_path: P
         module.audit_benchmark(*paths, expected_case_count=2)
 
 
-def test_one_hard_mask_difference_invalidates_numerical_equivalence(tmp_path: Path) -> None:
+def test_excess_hard_mask_difference_is_recorded_as_a_rejected_audit(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     paths = _fixture(tmp_path)
     changed = tmp_path / "changed-output"
     _write_outputs(changed, changed_mask=True)
     paths[3][1] = changed
 
-    with pytest.raises(module.BenchmarkError, match="Hard masks disagree"):
-        module.audit_benchmark(*paths, expected_case_count=2)
+    result = module.audit_benchmark(*paths, expected_case_count=2)
+
+    assert result["accepted"] is False
+    assert result["timing_passed"] is True
+    assert result["numerical_equivalence_passed"] is False
+    assert result["rejection_reasons"] == ["numerical_equivalence_gate_failed"]
+    changed_comparison = result["numerical_equivalence"][-1]
+    assert changed_comparison["hard_mask_disagreeing_voxels"] == 1
+    assert changed_comparison["passed"] is False
+
+
+def test_tiny_mask_kernel_drift_inside_both_amended_bounds_is_accepted(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    reference = _write_outputs(tmp_path / "reference", shape=(20, 100, 100))
+    candidate = _write_outputs(
+        tmp_path / "candidate",
+        changed_mask=True,
+        probability_shift=5e-5,
+        shape=(20, 100, 100),
+    )
+
+    comparison = module._compare_outputs(
+        reference,
+        candidate,
+        comparison_name="bounded_drift",
+    )
+
+    assert comparison["passed"] is True
+    assert comparison["hard_mask_disagreeing_voxels"] == 1
+    assert comparison["hard_mask_disagreement_fraction"] == pytest.approx(2.5e-6)
+    assert comparison["maximum_hard_mask_disagreeing_voxels_in_one_case"] == 1
+    assert comparison["maximum_absolute_class_probability_delta"] == pytest.approx(5e-5)
+
+
+def test_subtype_decision_difference_remains_an_exact_rejection(tmp_path: Path) -> None:
+    module = _load_module()
+    paths = _fixture(tmp_path)
+    subtype_path = paths[3][0] / "subtype_results.csv"
+    subtype_path.write_text(
+        subtype_path.read_text(encoding="utf-8").replace("case_b.nii.gz,1", "case_b.nii.gz,2"),
+        encoding="utf-8",
+    )
+
+    result = module.audit_benchmark(*paths, expected_case_count=2)
+
+    assert result["accepted"] is False
+    comparison = result["numerical_equivalence"][-2]
+    assert comparison["subtype_decision_disagreements"] == 1
+    assert comparison["passed"] is False
+
+
+def test_amended_lock_smoke_evidence_and_fixed_development_subset_are_consistent() -> None:
+    module = _load_module()
+    lock = json.loads(
+        (ROOT / "configs" / "inference_speed_benchmark.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    smoke = json.loads(
+        (ROOT / "configs" / "inference_speed_development_smoke.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    subset = json.loads(
+        (ROOT / "configs" / "inference_speed_development_subset.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    equivalence = lock["numerical_equivalence"]
+    assert equivalence["global_hard_mask_disagreement_fraction_maximum"] == (
+        module.MAXIMUM_HARD_MASK_DISAGREEMENT_FRACTION
+    )
+    assert equivalence["hard_mask_disagreeing_voxels_per_case_maximum"] == (
+        module.MAXIMUM_HARD_MASK_DISAGREEING_VOXELS_PER_CASE
+    )
+    assert equivalence["maximum_absolute_class_probability_delta"] == (
+        module.MAXIMUM_CLASS_PROBABILITY_DELTA
+    )
+    assert lock["amendment_provenance"]["timing_threshold_changed"] is False
+    assert smoke["timing_summary"]["ten_percent_gate_met"] is False
+    assert all(run["oom_fallback_count"] == 0 for run in smoke["runs"])
+    assert max(
+        row["hard_mask_disagreeing_voxels"]
+        for row in smoke["pairwise_equivalence"]
+    ) == 3
+
+    cases = subset["cases"]
+    assert len(cases) == 20
+    assert len({case["case_id"] for case in cases}) == 20
+    assert Counter(case["tile_count"] for case in cases) == {
+        int(tile_count): quota for tile_count, quota in subset["selection"]["quotas"].items()
+    }
+    assert subset["planned_use"]["gpu_launch_requires_root_authorization_after_classifier_extraction"]

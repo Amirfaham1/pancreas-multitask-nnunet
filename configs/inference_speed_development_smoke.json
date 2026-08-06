@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "purpose": "authorized_train_only_gpu_functional_and_equivalence_smoke",
+  "status": "completed_not_an_acceptance_benchmark",
+  "initial_speed_lock_commit": "6040b50145451579d62bbf445ab8d5d3a78363c8",
+  "launcher_fix_commit": "9045ce8",
+  "source_scope": {
+    "classification_manifest_sha256": "89b721abb789a13763b9ae061ec0f8a7471d1d05335df7e0addcb4ccc077c64b",
+    "case_ids_sha256": "e3ee49443bf417c27e5c2d14359c5a56896cfbfe5c8f4a465824fc7ea347cbbd",
+    "cases": [
+      {
+        "case_id": "quiz_0_041",
+        "declared_split": "train",
+        "preprocessed_shape": [42, 112, 155],
+        "sliding_window_tile_count": 1,
+        "image_sha256": "2b82ed60528388dc728d75b484a218ed3079a75249819cbf8c638da8d9f598c2"
+      },
+      {
+        "case_id": "quiz_0_060",
+        "declared_split": "train",
+        "preprocessed_shape": [68, 103, 187],
+        "sliding_window_tile_count": 2,
+        "image_sha256": "51a7b8867c35d26c5fde333a1c40ab222ca5b24fc6c3199618f48bd08959cdb0"
+      }
+    ],
+    "official_validation_or_test_inputs_used": false,
+    "official_validation_or_test_labels_used": false
+  },
+  "checkpoint": {
+    "name": "checkpoint_classification_rescue.pth",
+    "sha256": "d7248e8903fd1f062687ae33a22ad0374ca1b9927445443dcde55dcde128d116",
+    "size_bytes": 415345223
+  },
+  "environment": {
+    "device": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "device_capability": [8, 9],
+    "cuda_runtime_version": "12.8",
+    "cudnn_version": 91002,
+    "python_version": "3.12.13",
+    "torch_version": "2.8.0+cu128"
+  },
+  "launch_provenance": {
+    "windows_policy_block": "The first shell invocation was blocked before the wrapper or Python ran; no benchmark directory or inference was created.",
+    "zero_case_initialization_failure": "The next wrapper launch stopped before preprocessing because nnUNet_extTrainer was absent; no runtime artifact or prediction was produced, and the failed scratch directory was preserved.",
+    "completed_update": "The launcher exported the repository custom-trainer path in commit 9045ce8, then four new fresh processes completed under a new scratch root."
+  },
+  "runs": [
+    {
+      "arm": "reference_1",
+      "started_at_utc": "2026-08-06T14:23:46.208540+00:00",
+      "tile_batch_size": 1,
+      "tta_batch_size": 1,
+      "total_seconds": 9.617765999981202,
+      "seconds_per_case": 4.808882999990601,
+      "peak_allocated_mib": 2170.2275390625,
+      "peak_reserved_mib": 2500.0,
+      "network_forward_calls": 24,
+      "oom_fallback_count": 0
+    },
+    {
+      "arm": "candidate_1",
+      "started_at_utc": "2026-08-06T14:23:59.174045+00:00",
+      "tile_batch_size": 2,
+      "tta_batch_size": 2,
+      "total_seconds": 10.223467999952845,
+      "seconds_per_case": 5.111733999976423,
+      "peak_allocated_mib": 3734.0048828125,
+      "peak_reserved_mib": 4376.0,
+      "network_forward_calls": 12,
+      "oom_fallback_count": 0
+    },
+    {
+      "arm": "candidate_2",
+      "started_at_utc": "2026-08-06T14:24:12.706928+00:00",
+      "tile_batch_size": 2,
+      "tta_batch_size": 2,
+      "total_seconds": 11.190810900065117,
+      "seconds_per_case": 5.595405450032558,
+      "peak_allocated_mib": 3734.0048828125,
+      "peak_reserved_mib": 4376.0,
+      "network_forward_calls": 12,
+      "oom_fallback_count": 0
+    },
+    {
+      "arm": "reference_2",
+      "started_at_utc": "2026-08-06T14:24:27.584618+00:00",
+      "tile_batch_size": 1,
+      "tta_batch_size": 1,
+      "total_seconds": 12.810931099927984,
+      "seconds_per_case": 6.405465549963992,
+      "peak_allocated_mib": 2170.2275390625,
+      "peak_reserved_mib": 2500.0,
+      "network_forward_calls": 24,
+      "oom_fallback_count": 0
+    }
+  ],
+  "timing_summary": {
+    "reference_mean_seconds_per_case": 5.607174274977297,
+    "candidate_mean_seconds_per_case": 5.3535697250044905,
+    "candidate_fraction_of_reference": 0.9547714164860993,
+    "runtime_reduction_percent": 4.522858351390068,
+    "ten_percent_gate_met": false,
+    "interpretation": "This two-case initialization-dominated smoke was not designated or powered as the final speed benchmark."
+  },
+  "pairwise_equivalence": [
+    {
+      "pair": "reference_1_vs_reference_2",
+      "hard_mask_disagreeing_voxels": 0,
+      "maximum_absolute_class_probability_delta": 0.0,
+      "subtype_decision_disagreements": 0
+    },
+    {
+      "pair": "reference_1_vs_candidate_1",
+      "hard_mask_disagreeing_voxels": 2,
+      "hard_mask_disagreement_fraction": 8.114393473431041e-7,
+      "changed_label_pair": "background_vs_pancreas_only",
+      "maximum_absolute_class_probability_delta": 1.573600000001618e-5,
+      "subtype_decision_disagreements": 0
+    },
+    {
+      "pair": "reference_1_vs_candidate_2",
+      "hard_mask_disagreeing_voxels": 3,
+      "hard_mask_disagreement_fraction": 1.2171590210146563e-6,
+      "changed_label_pair": "background_vs_pancreas_only",
+      "maximum_absolute_class_probability_delta": 2.7715999999955443e-5,
+      "subtype_decision_disagreements": 0
+    },
+    {
+      "pair": "candidate_1_vs_candidate_2",
+      "hard_mask_disagreeing_voxels": 1,
+      "hard_mask_disagreement_fraction": 4.0571967367155206e-7,
+      "changed_label_pair": "background_vs_pancreas_only",
+      "maximum_absolute_class_probability_delta": 2.8550000000016063e-5,
+      "subtype_decision_disagreements": 0
+    }
+  ],
+  "initial_exact_gate_result": {
+    "accepted": false,
+    "reason": "candidate_hard_masks_were_not_bitwise_equal",
+    "audit_json_written": false
+  },
+  "amendment": {
+    "applies_only_before_the_final_benchmark": true,
+    "global_hard_mask_disagreement_fraction_maximum": 1e-5,
+    "hard_mask_disagreeing_voxels_per_case_maximum": 16,
+    "maximum_absolute_class_probability_delta": 1e-4,
+    "geometry_and_dtype_must_match_exactly": true,
+    "subtype_decisions_must_match_exactly": true,
+    "oom_fallbacks_allowed": 0,
+    "minimum_runtime_reduction_percent_unchanged": 10.0
+  }
+}
