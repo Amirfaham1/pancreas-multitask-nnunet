@@ -1,0 +1,340 @@
+{
+  "schema_version": 1,
+  "status": "locked_before_single_v5_official_reevaluation_and_selected_v5_test_inference",
+  "locked_at_utc": "2026-08-06T16:55:55.8269939Z",
+  "evaluated_implementation_commit": "39b2a60da54e43ffdda648562fc296a8c9910cd9",
+  "candidate_family": "assignment_conforming_v5_neural_case_head",
+  "eligibility_scope": "best_of_two_locked_neural_heads",
+  "selected_candidate": {
+    "candidate_id": "neural_two_query_cross_attention_mil",
+    "selection_rule": "higher mean across three complete five-fold train-only OOF repeats, with the locked recall tie rule",
+    "selected_head_mean_oof_macro_f1": 0.5079648501,
+    "selected_head_repeat_macro_f1": [
+      0.4694334651,
+      0.5271997311,
+      0.527261354
+    ],
+    "selected_head_minimum_repeat_class_recall": 0.435483871,
+    "mean_mil_control_mean_oof_macro_f1": 0.419727787,
+    "selected_head_all_train_resubstitution_macro_f1": 0.978711,
+    "resubstitution_minus_oof_gap": 0.4707461499,
+    "overfitting_interpretation": "severe",
+    "claim_limit": "stronger of exactly two locked neural heads; not globally optimal and not an unbiased end-to-end generalization estimate"
+  },
+  "decision_rule": {
+    "type": "three_class_softmax_argmax_with_additive_log_score_offsets",
+    "final_offsets": [0.0, 0.0, 0.0],
+    "offset_gate_status": "rejected",
+    "unadjusted_mean_oof_macro_f1": 0.5079648501,
+    "cross_fitted_offset_mean_oof_macro_f1": 0.5040682219,
+    "gain": -0.0038966282,
+    "probability_calibration_claim_allowed": false
+  },
+  "development_boundary": {
+    "v5_head_architecture_training_selection_and_offsets_used_official_validation_or_test_data": false,
+    "v5_speed_development_used_official_validation_or_test_data": false,
+    "baseline_official_validation_observed_before_v5_extension": true,
+    "frozen_checkpoint_was_validation_selected": true,
+    "baseline_test_inference_and_packaging_occurred_before_v5_extension": true,
+    "baseline_test_inputs_were_a_v5_tuning_signal": false
+  },
+  "stock_speed_protocol_deviations": {
+    "post_stock_lock_train_only_conformance_artifacts_contained_timing_fields": true,
+    "diagnostic_conformance_timings_eligible_for_final_speed_arithmetic": false,
+    "candidate_implementation_changed_after_original_stock_lock": true,
+    "original_stock_lock_literal_compliance_was_perfect": false,
+    "repairs_were_limited_to_determinism_and_stock_export_conformance": true,
+    "each_repair_was_locked_before_its_implementation_edit": true,
+    "official_validation_or_test_data_used_for_repairs": false,
+    "model_weights_features_head_or_offsets_changed_by_repairs": false
+  },
+  "protocol_chronology": {
+    "post_baseline_extension": true,
+    "original_stock_lock_literal_deviation_acknowledged": true,
+    "original_stock_lock_timestamp_utc": "2026-08-06T15:20:43.7706555Z",
+    "determinism_repair_lock_timestamp_utc": "2026-08-06T15:42:30.7204305Z",
+    "stock_export_repair_lock_timestamp_utc": "2026-08-06T15:55:47.5287957Z",
+    "diagnostic_timings_excluded_from_final_speed_statistic": true,
+    "repair_effect": "execution determinism and terminal FP16 export equivalence only",
+    "historical_baseline_masks_guaranteed_byte_identical_to_new_v5_exports": false
+  },
+  "artifacts": {
+    "checkpoint": {
+      "name": "checkpoint_classification_rescue.pth",
+      "sha256": "d7248e8903fd1f062687ae33a22ad0374ca1b9927445443dcde55dcde128d116"
+    },
+    "neural_case_head_bundle": {
+      "filename": "neural_case_head_v5.pth",
+      "sha256": "6e4ed210bc23cd7c7bfe02c46816dd8461c0be84108d4f9d2a36f1409b6df09d",
+      "selected_refit_state_sha256": "7954be6f9620f77dc80365df97bf374b84e976ad5df12f3dc4ea4acc34892e3f"
+    },
+    "numeric_train_dataset": {
+      "kind": "canonical_numeric_content_digest",
+      "sha256": "ecbac559e3fa4d3353618c1b7a0e85e672a3e73daafe5a7d3bf67beaf1f1e140"
+    },
+    "plans_json": {
+      "sha256": "8596a9cf4af2a0d6d2b8248e127f3514274d3bb13585491483fa630395f10a9f"
+    },
+    "dataset_json": {
+      "sha256": "4d35b17a700f2f92d0faa00f3db5cf056eb49f161db5a218ab1f641d22ae49ff"
+    }
+  },
+  "frozen_components": {
+    "encoder": "324f5f75debb9885e270102a8222ed3248483ea21ff2bb6fb0177730f2b85ff1",
+    "decoder": "b38d332ce7d812b98b03389777a303f6e739a789cc685cbf4d52a413ba4711f2",
+    "classification": "1c6378fe0a2f8e792b183c8b0333b164bf2d67951147c96fadae390bd7cc6df8"
+  },
+  "inference_contract": {
+    "fold": 0,
+    "classification_mode": "neural-v5",
+    "v5_extraction_mode": "neural_only",
+    "device": "cuda",
+    "tile_step_size": 0.5,
+    "tile_batch_size": 1,
+    "tta_batch_size": 1,
+    "tta_enabled": true,
+    "mirror_axes": [0, 1, 2],
+    "gaussian_enabled": true,
+    "overwrite": true,
+    "results_on_cpu": false,
+    "deterministic_execution": true,
+    "autocast_cuda_float16": true,
+    "segmentation_export_logit_dtype": "torch.float16",
+    "torch_compile": false,
+    "postprocessing": "none"
+  },
+  "protocol_locks": {
+    "neural_case_head": {
+      "path": "configs/phd_neural_case_head_lock_v5.json",
+      "sha256": "a8c2147493718acc96e4aa5dc471bf3f3277f0b99e8a8f7620bf966ab7b70d11"
+    },
+    "neural_decision": {
+      "path": "configs/phd_neural_decision_lock_v5.json",
+      "sha256": "e28a303c7d3da5dc7857ecc72787b6746d1e689e83167c500d4d2823c5ea540f"
+    },
+    "inference_speed": {
+      "path": "configs/inference_speed_benchmark_v3.json",
+      "sha256": "3a57ab79147a6dd9ab4ee3fa99fdb2be978e9c60f290cead7a52298673e926aa"
+    },
+    "inference_speed_stock_gate": {
+      "path": "configs/inference_speed_stock_gate_v1.json",
+      "sha256": "563d9d5e4fbe0f92653c6b7295c476d0ddf5d239c47beb1948410bbb80a7c2e2"
+    },
+    "inference_determinism": {
+      "path": "configs/inference_determinism_conformance_v1.json",
+      "sha256": "33b5aed4027651f999875e2340a65173c620c5673f845a186115cd3a7adb1ddd"
+    },
+    "stock_export_conformance": {
+      "path": "configs/inference_stock_export_conformance_v1.json",
+      "sha256": "bf309ae1ff8475b0985089ac1db2ef6b35383be34d7eeda0e9c6e63478f19503"
+    }
+  },
+  "implementation_files": [
+    {
+      "path": "scripts/Set-QuizEnvironment.ps1",
+      "sha256": "0c8c09c76116bb0414ebc87f46409a1e91cc114aea73d08919524d84a548bc2d"
+    },
+    {
+      "path": "scripts/predict_joint.py",
+      "sha256": "7776477984a1d38563b0e314858a9edb6477b5c0d0599e2fdbd80908e93fdfd6"
+    },
+    {
+      "path": "scripts/evaluate_predictions.py",
+      "sha256": "0c1812137419efe5fe00a9eceb9566b06bdc22a7b49bd8061f38270393637244"
+    },
+    {
+      "path": "scripts/Package-Submission.ps1",
+      "sha256": "0a7b7706be5882dfe48e914708fa072558f98426ca54e944c6078ce11fd39045"
+    },
+    {
+      "path": "scripts/validate_submission.py",
+      "sha256": "2baca5bfef7b8cd77ad1b5f1f94ef49ce28ea736547ee286fd44c1dcbedd569a"
+    },
+    {
+      "path": "scripts/run_deterministic_inference.py",
+      "sha256": "bd327fc3a481c11c64aa3604078a69a33c469c8a8967236887529de959c81038"
+    },
+    {
+      "path": "scripts/benchmark_inference_speed.py",
+      "sha256": "36aefaa09471dc9654cac96678b96fdf3dc6530aa19356bcf4e2f95ed75efaa6"
+    },
+    {
+      "path": "scripts/Run-InferenceSpeedBenchmark.ps1",
+      "sha256": "2359fbfa3f72b76a2a713a4570b234fb8951ccf3c2d1df258fb141b5dcb71bea"
+    },
+    {
+      "path": "scripts/run_timed_inference_child.py",
+      "sha256": "66214885ce0276c473755cbde03118e26494a7fc351a2a39f618f8761b201239"
+    },
+    {
+      "path": "scripts/benchmark_stock_inference_speed.py",
+      "sha256": "03e55be9a75a7c36236abc2d12d0232b49330186bf60353eb53b47bf73ae4f92"
+    },
+    {
+      "path": "scripts/Run-StockInferenceSpeedBenchmark.ps1",
+      "sha256": "9f2e8ddef8b0484e734cd2130b04e21cf16b80277ebc5e2b1345604a65ecb3db"
+    },
+    {
+      "path": "scripts/V5-LockedDeliveryCommon.ps1",
+      "sha256": "3dc9a80761fa4def5082ddbb4f1d75195716920b53af1bc4622f3aec623607bc"
+    },
+    {
+      "path": "scripts/Run-V5LockedFinalEvaluation.ps1",
+      "sha256": "7b7ea9f937be9b54a1a7e81d0c7727d009159698d62bfc97f01538d1fbd0e79e"
+    },
+    {
+      "path": "scripts/Run-V5LockedSelectedTestAndPackage.ps1",
+      "sha256": "e5e7447f49268979bc7e673ec36da7cc163e8f41106d908f20ab82351003e4f4"
+    },
+    {
+      "path": "src/pancreas_multitask/classification_rescue.py",
+      "sha256": "f9860b901f367da2cd4f0b57ac36446590fc81d58dfc33bda02892afa748c92e"
+    },
+    {
+      "path": "src/pancreas_multitask/inference_determinism.py",
+      "sha256": "9f4afbbb6f9d00aae104d4bc18330269104fdff78513520c10d63520a3ef6a04"
+    },
+    {
+      "path": "src/pancreas_multitask/network.py",
+      "sha256": "14cbc5d04426306e32e1d07f2fe6329eb4d37f625db660b75253d210feb9c6e3"
+    },
+    {
+      "path": "src/pancreas_multitask/predictor.py",
+      "sha256": "7b631b2f7bb92d6f4340ea6ca36b19ea46cefa282092169ae788992fd1182826"
+    },
+    {
+      "path": "src/pancreas_multitask/case_features.py",
+      "sha256": "fd037ec77193575e0aebb131369e37d396aecc3c7cbadb2293ae0c3d6124283e"
+    },
+    {
+      "path": "src/pancreas_multitask/case_feature_extractor.py",
+      "sha256": "68d769d96c0355e37630fccd143bb6c8d7662c13c6b6ace026a393dff46ae2e9"
+    },
+    {
+      "path": "src/pancreas_multitask/neural_case_head.py",
+      "sha256": "75c87da5389b64b7c4502045cd1cab4a8e132db789ae63f339a795cc6ab271fe"
+    },
+    {
+      "path": "src/pancreas_multitask/neural_case_bundle.py",
+      "sha256": "18b4fa58d4a495178399e781cc551c225680e78c8c8c2231b3ef5708598607e1"
+    },
+    {
+      "path": "src/pancreas_multitask/neural_case_training.py",
+      "sha256": "1a81380694cc420652690fb8a4e4f993ce00a650c14ce8997d33c57e987c4b23"
+    },
+    {
+      "path": "src/pancreas_multitask/neural_case_predictor.py",
+      "sha256": "ee66e093d47688fcfd8ec651ff6700a582a5e1b71165ad84f4fe200226aa4bd8"
+    }
+  ],
+  "train_only_audits": {
+    "fit": {
+      "filename": "neural_case_head_fit_audit.json",
+      "sha256": "16831b1249de84e6f89391903cd9510f7a21e1fa85389d3ca33b76fbb70c7274"
+    },
+    "selection": {
+      "filename": "neural_case_head_selection.json",
+      "sha256": "a7f397ea0bf86c551b13692e5e4c329999573e6b398486046e9392639304444c"
+    },
+    "decision": {
+      "filename": "neural_decision_calibration.json",
+      "sha256": "87233541474dcd3226866912c7968c05b1ba4b855ed6075239763bfac9c6bcf0"
+    },
+    "refit": {
+      "filename": "neural_case_head_refit.json",
+      "sha256": "b2bb4adfebe4bc01edfb8e676c2c8894a0b7b328a39bf29c24f57b5ffc33e3f0"
+    }
+  },
+  "train_only_conformance_evidence": {
+    "eligible_neural_evidence_audit": {
+      "primary_checks_passed": 37,
+      "bundle_refit_and_sampler_checks_passed": 9,
+      "failures": 0
+    },
+    "final_full_v5_bootstrap_sha256": "819d73ef64c9729f1b60130a15089d0d354d4244a988bd28d33651beba547b2d",
+    "final_full_v5_runtime_sha256": "9749c186d5d1713c56aba0ef8abb6235688dc501bf5d41fbef8abea7e66afc49",
+    "final_neural_only_bootstrap_sha256": "196d8fb6609b3de9a8a0243671e34e11e180747dd9226ae8217e3a15d8728941",
+    "final_neural_only_runtime_sha256": "941cccad7ec86862a2217ec86982578efd16155ad3921bef554a8520e9ae56b0",
+    "final_stock_bootstrap_sha256": "34e47605834fd3de5b36e27c0456342e406568b801782f7f753884bf008d96bd",
+    "final_exact_mask_sha256": {
+      "quiz_0_041": "9a2dc3731ad3e6b26b1ca1316df8713fe86ef13ee49cf65a112302abb3cebdcd",
+      "quiz_2_200": "d54a5a381c701192d6f0b2705e3ba6008dc6491b4e9e454c417633997d200849"
+    },
+    "functional_smoke_v1": {
+      "status": "failed_expected_provenance_diagnostic",
+      "external_runtime_sha256": "0be64c7397cbf6552d80f40e91c38d74b49abec8f64da4673a001bcb4fc02526",
+      "failure": "launcher_pid_was_compared_with_inner_inference_pid",
+      "timing_eligible": false
+    },
+    "functional_smoke_v2": {
+      "status": "passed",
+      "stock_external_runtime_sha256": "a34c55ba96623c4a3e0dc8465fbe247e083d5caa803bdbbb06de5027faa27ff6",
+      "candidate_external_runtime_sha256": "05ae48fc9d64116189c0fb4bf8a23bf5f8f34b1f36de5cba3a2259454e451a1a",
+      "candidate_internal_runtime_sha256": "1568ab79d279c5fe4aa714353d51a57b834fe0dee67b00ca58d6362c066e80d7",
+      "timing_eligible": false,
+      "exact_two_case_masks": true,
+      "oom_or_cpu_result_fallbacks": 0
+    }
+  },
+  "run_ledger_files": {
+    "official_validation": "official_validation_run_consumed.json",
+    "selected_test": "selected_test_run_consumed.json",
+    "stock_speed": "stock_speed_run_consumed.json"
+  },
+  "official_and_test_access_plan": {
+    "new_v5_official_validation_inference_runs_allowed": 1,
+    "new_v5_official_validation_evaluations_allowed": 1,
+    "new_v5_classifier_iterations_after_official_evaluation_allowed": 0,
+    "selected_v5_test_package_inference_runs_allowed_if_replacement_gate_passes": 1,
+    "stock_speed_final_arm_order_if_v5_selected": [
+      "stock_reference_1",
+      "candidate_1",
+      "candidate_2",
+      "stock_reference_2"
+    ],
+    "stock_speed_final_benchmark_runs_allowed": 1,
+    "test_targets_or_submission_feedback_allowed": false,
+    "historical_baseline_test_inference_already_occurred": true
+  },
+  "replacement_and_claim_gates": {
+    "baseline_macro_f1": 0.46399340516987575,
+    "replacement_requires_strict_macro_f1_improvement": true,
+    "replacement_requires_whole_pancreas_dice_at_least": 0.91,
+    "replacement_requires_lesion_dice_at_least": 0.31,
+    "higher_tier_macro_f1_at_least": 0.7,
+    "higher_tier_speed_reduction_percent_at_least": 10.0,
+    "higher_tier_gates_are_conjunctive": true,
+    "global_best_model_claim_allowed": false,
+    "clinical_claim_allowed": false
+  },
+  "immutable_baseline_fallback": {
+    "repository_commit": "509cbe2",
+    "whole_pancreas_dice": 0.9201588643,
+    "lesion_dice": 0.619672752,
+    "macro_f1": 0.4639934052,
+    "report_pdf_sha256": "90d68697d6330d5124f1a2533f3785033643a0985fe3ce2813b0d90a0a04fd03",
+    "submission_zip_sha256": "5de55f4ccc1eea78ef8974d0f362039523404a1d6315d06d0ec41ec8f0d08391"
+  },
+  "wandb_evidence": {
+    "baseline_run_id": "hrs05iyx",
+    "v5_train_only_run_id": "u03yz7ds",
+    "v5_train_only_run_url": "https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/u03yz7ds"
+  },
+  "verification_at_lock": {
+    "full_test_suite_passed": 377,
+    "full_test_suite_failed": 0,
+    "stock_auditor_adversarial_tests_passed": 25,
+    "ruff_passed": true,
+    "compileall_passed": true,
+    "powershell_parse_passed": true,
+    "git_diff_check_passed": true,
+    "independent_freeze_verdict": "freeze",
+    "official_validation_or_test_access_during_final_harness_audit": false
+  },
+  "unresolved_until_ledgers_are_consumed": {
+    "v5_official_metrics": null,
+    "v5_replacement_decision": null,
+    "stock_abba_speed_result": null,
+    "selected_test_package_sha256": null
+  }
+}
