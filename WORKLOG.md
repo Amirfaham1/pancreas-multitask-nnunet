@@ -64,7 +64,7 @@ Status: **DONE**
 Status: **DONE**
 
 - Historical pre-launch gate: **46 passed** in the provisioned environment.
-- Current expanded repository suite: **72 passed**.
+- Current expanded repository suite: **74 passed**.
 - CLI smoke: one real GPU training/validation update completed without OOM.
 - Stock segmentation inference completed over all 36 held-out volumes, confirming the wrapper preserves nnU-Net's default tensor return contract.
 - Guarded timing probe: five training plus two validation updates; epoch compute 6.13 s; total process 26.18 s including initialization and cleanup.

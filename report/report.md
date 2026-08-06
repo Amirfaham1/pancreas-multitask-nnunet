@@ -37,7 +37,7 @@ FINALIZATION CONTRACT
 
 **Public repository:** [github.com/Amirfaham1/pancreas-multitask-nnunet](https://github.com/Amirfaham1/pancreas-multitask-nnunet)
 
-**Weights & Biases run:** `PENDING_WANDB_URL`
+**Weights & Biases run:** [public run `hrs05iyx`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx)
 
 **Reported Git commit:** `PENDING_GIT_COMMIT`
 
@@ -264,8 +264,8 @@ These in-training validation signals are intentionally called *patch diagnostics
 
 The final W&B record must include:
 
-- project/run URL: `PENDING_WANDB_URL`;
-- run ID: `PENDING_WANDB_RUN_ID`;
+- project/run URL: [public W&B run](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx);
+- run ID: `hrs05iyx`;
 - synchronization status: `PENDING_WANDB_SYNC_STATUS`; and
 - screenshots/exports used in Figures 2 and 3: `PENDING_WANDB_EXPORT_PATHS`.
 
@@ -624,21 +624,16 @@ This project implements the required nnU-Net v2 3D ResEnc M multi-task system wh
 
 # Requirement-to-evidence traceability {.unnumbered}
 
-| Brief requirement | Implementation evidence | Report evidence | Status |
-|---|---|---|---|
-| nnU-Net v2 3D ResEnc M | `plans.json`; trainer architecture guard | Sections 3.1–3.3; Fig. 1 | implemented; final link pending |
-| Shared encoder and two outputs | `network.py`; gradient/tensor tests | Sections 3.2–3.4 | implemented |
-| W&B for both tasks | trainer custom logger and run artifact | Section 4.2; Figs. 2–3 | `PENDING_PUBLIC_LINK` |
-| Classification imbalance strategy | weighted CE and patch reliability | Section 3.5 | implemented |
-| Overfitting strategy | augmentation/configuration/monitoring | Sections 3.6–3.7 | implemented |
-| Metrics Reloaded-aligned validation | independent metric module and CLI | Section 5; Figs. 4–6 | evaluator implemented; results pending |
-| No validation training | split manifest and training log | Sections 2.3 and 4 | verified |
-| No external data/pretrained weights | training command/provenance review | Sections 1, 2.3, 9 | final checkpoint review pending |
-| AI workflow | `docs/AI_WORKFLOW.md` | Section 8 | implemented; estimate disclosed |
-| Public GitHub | repository privacy/secret scan | title page and Section 9 | [Public repository](https://github.com/Amirfaham1/pancreas-multitask-nnunet), verified 2026-08-05 |
-| 72 masks and subtype CSV | joint inference + ZIP validator | Section 9.3 | `PENDING_PREDICTIONS` |
-
-: Requirement-to-evidence traceability at finalization. {#tbl:traceability}
+- **Required 3D ResEnc M:** generated `plans.json` plus the trainer architecture guard; Sections 3.1–3.3 and Fig. 1.
+- **Shared encoder and two outputs:** `network.py`, tensor/gradient tests, and Sections 3.2–3.4.
+- **W&B for both tasks:** custom trainer logger, exported curves, and [public run `hrs05iyx`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx); Section 4.2 and Figs. 2–3.
+- **Classification imbalance and overfitting controls:** weighted classification objective, patch-reliability weighting, augmentation, and task-specific monitoring; Sections 3.5–3.7.
+- **Metrics Reloaded-aligned validation:** independent evaluator, complete-checkpoint selector, saved aggregate/case artifacts, and Figs. 4–6; final evidence `PENDING_METRICS_ARTIFACT`.
+- **No validation optimization:** disjoint split manifest and training log; Sections 2.3 and 4.
+- **No external data or pretrained weights:** launch/provenance review and final checkpoint audit; Sections 1, 2.3, and 9.
+- **AI workflow:** `docs/AI_WORKFLOW.md`, 85–95% initial-content estimate, and Section 8.
+- **Public source:** [GitHub repository](https://github.com/Amirfaham1/pancreas-multitask-nnunet), verified 2026-08-05.
+- **72 masks and subtype CSV:** joint inference and extracted-archive validator; final evidence `PENDING_PREDICTIONS`.
 
 # References {.unnumbered}
 

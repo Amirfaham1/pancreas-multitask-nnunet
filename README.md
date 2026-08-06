@@ -134,7 +134,7 @@ D:\MLQuizWork\.venv\Scripts\python.exe -m pytest -q
 ```
 
 The historical pre-launch gate had **46 passing tests**; the current expanded
-suite has **72 passing tests**. The exact CLI smoke and guarded benchmark were:
+suite has **74 passing tests**. The exact CLI smoke and guarded benchmark were:
 
 ```powershell
 # Run after the process-scoped environment setup above.
@@ -231,6 +231,15 @@ D:\MLQuizWork\.venv\Scripts\python.exe .\scripts\select_checkpoint.py `
   --output <checkpoint-selection.json>
 ```
 
+After all three checkpoints exist, the same frozen sequence can be run with
+one guarded command. It refuses to start while the production trainer is
+active, resumes complete prediction cases by default, and deliberately stops
+before test inference or ZIP creation:
+
+```powershell
+.\scripts\Run-FinalEvaluation.ps1
+```
+
 The evaluator reports unweighted case-level mean/std and bootstrap confidence intervals for whole-pancreas Dice (`label > 0`) and lesion Dice (`label == 2`), plus a fixed three-class confusion matrix, per-class precision/recall/F1, accuracy, and macro-F1. Empty reference and prediction receives Dice 1; a one-sided empty set receives 0. Confusion-matrix rows are references and columns are predictions.
 
 ## Test package
@@ -251,7 +260,7 @@ D:\MLQuizWork\.venv\Scripts\python.exe .\scripts\validate_submission.py `
 | Lesion Dice | ≥ 0.27 | **PENDING** |
 | Three-class macro-F1 | ≥ 0.60 | **PENDING** |
 
-W&B run URL, selected checkpoint, dispersion statistics, and qualitative failure analysis will be inserted only after the frozen evaluator completes.
+The [public W&B run](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx) is visible now; its final history, selected checkpoint, dispersion statistics, and qualitative failure analysis will be frozen only after training and the independent evaluator complete.
 
 ## AI workflow and attribution
 
@@ -261,7 +270,7 @@ proposed tests, and supported debugging, experiment monitoring, evaluation,
 and packaging. Amirfaham Fallahpour defined the goal and quality bar, supplied
 access and compute, made consequential scope decisions, reviewed the work, and
 owns the final submission. AI outputs were treated as untrusted until checked
-with data audits, 72 automated tests, real CUDA smoke tests, saved
+with data audits, 74 automated tests, real CUDA smoke tests, saved
 configuration/checkpoint evidence, and human review; the final deliverables
 will additionally require clean archive validation before submission. See
 [docs/AI_WORKFLOW.md](docs/AI_WORKFLOW.md).
