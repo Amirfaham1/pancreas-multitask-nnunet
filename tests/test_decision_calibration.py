@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import copy
+
 import numpy as np
+import pytest
 
 from pancreas_multitask.decision_calibration import (
     apply_class_offsets,
@@ -63,6 +66,40 @@ def _selection_audit() -> dict:
     }
 
 
+def _v5_lock() -> dict:
+    lock = _decision_lock()
+    lock["cross_fitted_evaluation"] = lock.pop("cross_fitted_calibration_evaluation")
+    legacy_activation = lock.pop("calibration_activation")
+    lock["activation"] = {
+        "minimum_mean_macro_f1_gain_over_plain_selected_neural_head": (
+            legacy_activation["minimum_mean_macro_f1_gain_over_plain_selected_v3"]
+        ),
+        "maximum_allowed_drop_in_minimum_repeat_per_class_recall": legacy_activation[
+            "maximum_allowed_drop_in_minimum_repeat_per_class_recall"
+        ],
+    }
+    lock["score_contract"] = {
+        "class_order": [0, 1, 2],
+        "input": "selected_neural_head_three_logits",
+        "normalization": "float64_log_softmax",
+        "plain_rule_must_equal_argmax_raw_logits": True,
+    }
+    return lock
+
+
+def _v5_selection(*, unique: bool) -> dict:
+    selection = copy.deepcopy(_selection_audit())
+    for repeat in selection["candidate_results"][0]["oof_predictions"]:
+        for index, row in enumerate(repeat["predictions"]):
+            logits = np.asarray(row["log_scores"], dtype=np.float64)
+            if unique:
+                logits[index % 3] += index * 1e-6
+            shifted = logits - logits.max()
+            row["logits"] = logits.tolist()
+            row["log_scores"] = (shifted - np.log(np.exp(shifted).sum())).tolist()
+    return selection
+
+
 def test_offset_selection_uses_zero_for_already_perfect_scores() -> None:
     references = np.repeat(np.arange(3), 4)
     scores = np.full((12, 3), -2.0)
@@ -89,3 +126,25 @@ def test_apply_offsets_has_fixed_three_class_contract() -> None:
     predictions = apply_class_offsets(scores, (0.5, 0.0, 0.5))
 
     assert predictions.tolist() == [0, 2]
+
+
+def test_v5_neural_decision_lock_field_names_are_supported() -> None:
+    audit = evaluate_cross_fitted_offsets(_v5_selection(unique=True), _v5_lock())
+
+    assert audit["calibration_activated"] is True
+    assert audit["final_offsets"][1] == 0.0
+
+
+def test_v5_calibration_rejects_duplicate_numeric_score_digests() -> None:
+    with pytest.raises(ValueError, match="input order a split key"):
+        evaluate_cross_fitted_offsets(_v5_selection(unique=False), _v5_lock())
+
+
+def test_v5_calibration_rejects_log_scores_not_derived_from_raw_logits() -> None:
+    selection = _v5_selection(unique=True)
+    selection["candidate_results"][0]["oof_predictions"][0]["predictions"][0]["log_scores"][0] += (
+        1e-3
+    )
+
+    with pytest.raises(ValueError, match="differ from raw-logit"):
+        evaluate_cross_fitted_offsets(selection, _v5_lock())
