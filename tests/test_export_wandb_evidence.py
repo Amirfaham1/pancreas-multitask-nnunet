@@ -74,6 +74,7 @@ def _terminal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def test_canonicalization_keeps_later_duplicate_and_strips_extra_fields() -> None:
     rows = _complete_rows()
     older = _row(8, timestamp=float(rows[8]["_timestamp"]) - 1.0)
+    older.pop("epoch_end_timestamps")
     older["train_losses"] = -0.123
     rows.insert(8, older)
 
@@ -84,7 +85,61 @@ def test_canonicalization_keeps_later_duplicate_and_strips_extra_fields() -> Non
     assert history.duplicate_steps == {8: 2}
     assert history.canonical_rows[8]["_timestamp"] == _row(8)["_timestamp"]
     assert history.canonical_rows[8]["train_losses"] != -0.123
+    assert "epoch_end_timestamps" not in history.raw_rows[8]
+    assert "epoch_end_timestamps" in history.canonical_rows[8]
     assert "private_case_id" not in history.raw_rows[0]
+
+
+@pytest.mark.parametrize(
+    ("missing_location", "missing_field"),
+    [
+        ("canonical_step_8", "epoch_end_timestamps"),
+        ("older_step_8", "train_losses"),
+        ("other_step", "epoch_end_timestamps"),
+    ],
+)
+def test_only_older_step_8_duplicate_may_omit_epoch_end_timestamp(
+    missing_location: str, missing_field: str
+) -> None:
+    rows = _complete_rows()
+    older = _row(8, timestamp=float(rows[8]["_timestamp"]) - 1.0)
+    rows.insert(8, older)
+    if missing_location == "canonical_step_8":
+        rows[9].pop(missing_field)
+    elif missing_location == "older_step_8":
+        rows[8].pop(missing_field)
+    else:
+        rows[7].pop(missing_field)
+
+    with pytest.raises(
+        exporter.EvidenceValidationError, match=rf"missing required fields.*{missing_field}"
+    ):
+        exporter.validate_and_canonicalize_history(rows)
+
+
+def test_mean_fg_dice_accepts_float32_rounding_drift() -> None:
+    rows = _complete_rows()
+    row = rows[90]
+    row["mean_fg_dice"] = float(row["mean_fg_dice"]) + 2.9802322387695312e-08
+    row["val_multitask_score"] = (
+        math.fsum((float(row["mean_fg_dice"]), float(row["val_cls_macro_f1"]))) / 2
+    )
+
+    history = exporter.validate_and_canonicalize_history(rows)
+
+    assert history.canonical_rows[90]["mean_fg_dice"] == row["mean_fg_dice"]
+
+
+def test_mean_fg_dice_rejects_materially_larger_mismatch() -> None:
+    rows = _complete_rows()
+    row = rows[90]
+    row["mean_fg_dice"] = float(row["mean_fg_dice"]) + 2e-7
+    row["val_multitask_score"] = (
+        math.fsum((float(row["mean_fg_dice"]), float(row["val_cls_macro_f1"]))) / 2
+    )
+
+    with pytest.raises(exporter.EvidenceValidationError, match="mean_fg_dice.*inconsistent"):
+        exporter.validate_and_canonicalize_history(rows)
 
 
 @pytest.mark.parametrize(

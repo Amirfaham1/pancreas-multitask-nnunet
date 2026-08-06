@@ -19,7 +19,6 @@ import re
 import shutil
 import sys
 import tempfile
-from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -31,6 +30,7 @@ from urllib.parse import quote, urlsplit
 SCHEMA_VERSION = 1
 EXPECTED_EPOCHS = tuple(range(200))
 OPTIONAL_DUPLICATE_STEP = 8
+MEAN_DICE_ABS_TOLERANCE = 1e-7
 SHA256_PATTERN = re.compile(r"[0-9a-fA-F]{64}")
 
 REQUIRED_METRIC_FIELDS = (
@@ -130,15 +130,22 @@ def _history_step(row: Mapping[str, Any], *, row_index: int) -> int:
     return value
 
 
-def _validate_history_row(row: Mapping[str, Any], *, row_index: int) -> dict[str, Any]:
+def _validate_history_row(
+    row: Mapping[str, Any],
+    *,
+    row_index: int,
+    allow_missing_epoch_end_timestamp: bool = False,
+) -> dict[str, Any]:
     step = _history_step(row, row_index=row_index)
     missing = [field for field in HISTORY_FIELDS if field not in row]
-    if missing:
+    allowed_missing = {"epoch_end_timestamps"} if allow_missing_epoch_end_timestamp else set()
+    disallowed_missing = [field for field in missing if field not in allowed_missing]
+    if disallowed_missing:
         raise EvidenceValidationError(
-            f"History row for step {step} is missing required fields: {missing}"
+            f"History row for step {step} is missing required fields: {disallowed_missing}"
         )
 
-    sanitized = {field: row[field] for field in HISTORY_FIELDS}
+    sanitized = {field: row[field] for field in HISTORY_FIELDS if field in row}
     timestamp = _finite_number(sanitized["_timestamp"], field="_timestamp", step=step)
     runtime = _finite_number(sanitized["_runtime"], field="_runtime", step=step)
     if timestamp <= 0:
@@ -148,6 +155,8 @@ def _validate_history_row(row: Mapping[str, Any], *, row_index: int) -> dict[str
 
     numeric: dict[str, float] = {}
     for field in REQUIRED_METRIC_FIELDS:
+        if field not in sanitized:
+            continue
         numeric[field] = _finite_number(sanitized[field], field=field, step=step)
         if field in BOUNDED_METRIC_FIELDS and not 0.0 <= numeric[field] <= 1.0:
             raise EvidenceValidationError(
@@ -155,10 +164,13 @@ def _validate_history_row(row: Mapping[str, Any], *, row_index: int) -> dict[str
             )
     if numeric["lrs"] <= 0:
         raise EvidenceValidationError(f"History learning rate at step {step} must be positive")
-    if numeric["epoch_start_timestamps"] <= 0 or numeric["epoch_end_timestamps"] <= 0:
+    if numeric["epoch_start_timestamps"] <= 0:
         raise EvidenceValidationError(f"Epoch timestamps at step {step} must be positive")
-    if numeric["epoch_end_timestamps"] < numeric["epoch_start_timestamps"]:
-        raise EvidenceValidationError(f"Epoch end precedes epoch start at step {step}")
+    if "epoch_end_timestamps" in numeric:
+        if numeric["epoch_end_timestamps"] <= 0:
+            raise EvidenceValidationError(f"Epoch timestamps at step {step} must be positive")
+        if numeric["epoch_end_timestamps"] < numeric["epoch_start_timestamps"]:
+            raise EvidenceValidationError(f"Epoch end precedes epoch start at step {step}")
 
     expected_mean_dice = (
         math.fsum(
@@ -169,7 +181,12 @@ def _validate_history_row(row: Mapping[str, Any], *, row_index: int) -> dict[str
         )
         / 2
     )
-    if not math.isclose(numeric["mean_fg_dice"], expected_mean_dice, rel_tol=0.0, abs_tol=1e-10):
+    if not math.isclose(
+        numeric["mean_fg_dice"],
+        expected_mean_dice,
+        rel_tol=0.0,
+        abs_tol=MEAN_DICE_ABS_TOLERANCE,
+    ):
         raise EvidenceValidationError(
             f"mean_fg_dice at step {step} is inconsistent with per-class Dice"
         )
@@ -202,18 +219,17 @@ def validate_and_canonicalize_history(
 ) -> ValidatedHistory:
     """Require epochs 0..199 and select the latest optional duplicate at step 8."""
 
-    raw_rows: list[dict[str, Any]] = []
-    grouped: dict[int, list[dict[str, Any]]] = {}
+    materialized_rows: list[Mapping[str, Any]] = []
+    grouped_indexes: dict[int, list[int]] = {}
     for row_index, row in enumerate(rows):
         if not isinstance(row, Mapping):
             raise EvidenceValidationError(f"History row {row_index} is not a mapping")
-        sanitized = _validate_history_row(row, row_index=row_index)
-        step = int(sanitized["_step"])
-        raw_rows.append(sanitized)
-        grouped.setdefault(step, []).append(sanitized)
+        step = _history_step(row, row_index=row_index)
+        materialized_rows.append(row)
+        grouped_indexes.setdefault(step, []).append(row_index)
 
     expected = set(EXPECTED_EPOCHS)
-    observed = set(grouped)
+    observed = set(grouped_indexes)
     missing_steps = sorted(expected - observed)
     unexpected_steps = sorted(observed - expected)
     if missing_steps or unexpected_steps:
@@ -222,8 +238,9 @@ def validate_and_canonicalize_history(
             f"missing={missing_steps}, unexpected={unexpected_steps}"
         )
 
-    counts = Counter(int(row["_step"]) for row in raw_rows)
-    duplicate_steps = {step: count for step, count in sorted(counts.items()) if count > 1}
+    duplicate_steps = {
+        step: len(indexes) for step, indexes in sorted(grouped_indexes.items()) if len(indexes) > 1
+    }
     if set(duplicate_steps) - {OPTIONAL_DUPLICATE_STEP}:
         raise EvidenceValidationError(
             f"Only step {OPTIONAL_DUPLICATE_STEP} may be duplicated; got {duplicate_steps}"
@@ -232,20 +249,44 @@ def validate_and_canonicalize_history(
         raise EvidenceValidationError(
             f"Step {OPTIONAL_DUPLICATE_STEP} may occur at most twice; got {duplicate_steps}"
         )
-    if len(raw_rows) not in (len(EXPECTED_EPOCHS), len(EXPECTED_EPOCHS) + 1):
+    if len(materialized_rows) not in (len(EXPECTED_EPOCHS), len(EXPECTED_EPOCHS) + 1):
         raise EvidenceValidationError(
-            f"Expected 200 rows or 201 with duplicated step 8, got {len(raw_rows)}"
+            f"Expected 200 rows or 201 with duplicated step 8, got {len(materialized_rows)}"
         )
+
+    allow_missing_epoch_end_index: int | None = None
+    duplicate_indexes = grouped_indexes.get(OPTIONAL_DUPLICATE_STEP, [])
+    if len(duplicate_indexes) == 2:
+        duplicate_timestamps = [
+            _finite_number(
+                materialized_rows[row_index].get("_timestamp"),
+                field="_timestamp",
+                step=OPTIONAL_DUPLICATE_STEP,
+            )
+            for row_index in duplicate_indexes
+        ]
+        if duplicate_timestamps[0] == duplicate_timestamps[1]:
+            raise EvidenceValidationError(
+                f"Duplicated step {OPTIONAL_DUPLICATE_STEP} has equal timestamps and is ambiguous"
+            )
+        older_position = min(range(2), key=duplicate_timestamps.__getitem__)
+        allow_missing_epoch_end_index = duplicate_indexes[older_position]
+
+    raw_rows: list[dict[str, Any]] = []
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for row_index, row in enumerate(materialized_rows):
+        sanitized = _validate_history_row(
+            row,
+            row_index=row_index,
+            allow_missing_epoch_end_timestamp=row_index == allow_missing_epoch_end_index,
+        )
+        step = int(sanitized["_step"])
+        raw_rows.append(sanitized)
+        grouped.setdefault(step, []).append(sanitized)
 
     canonical_rows: list[dict[str, Any]] = []
     for step in EXPECTED_EPOCHS:
         candidates = grouped[step]
-        if len(candidates) == 2:
-            timestamps = [float(candidate["_timestamp"]) for candidate in candidates]
-            if timestamps[0] == timestamps[1]:
-                raise EvidenceValidationError(
-                    f"Duplicated step {step} has equal timestamps and is ambiguous"
-                )
         canonical_rows.append(max(candidates, key=lambda candidate: float(candidate["_timestamp"])))
     _validate_chronology(canonical_rows)
     return ValidatedHistory(
