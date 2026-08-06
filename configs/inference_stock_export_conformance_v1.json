@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "lock_status": "frozen_before_export_dtype_conformance_code_change_or_post_repair_raw_volume_timing",
+  "locked_at_utc": "2026-08-06T15:55:47.5287957Z",
+  "scope": "terminal_segmentation_export_dtype_conformance_for_full_and_dependency_pruned_v5_inference",
+  "bound_protocols": {
+    "dependency_pruning_lock": {
+      "path": "configs/inference_speed_benchmark_v3.json",
+      "sha256": "3a57ab79147a6dd9ab4ee3fa99fdb2be978e9c60f290cead7a52298673e926aa"
+    },
+    "stock_gate_lock": {
+      "path": "configs/inference_speed_stock_gate_v1.json",
+      "sha256": "563d9d5e4fbe0f92653c6b7295c476d0ddf5d239c47beb1948410bbb80a7c2e2"
+    },
+    "determinism_conformance_lock": {
+      "path": "configs/inference_determinism_conformance_v1.json",
+      "sha256": "33b5aed4027651f999875e2340a65173c620c5673f845a186115cd3a7adb1ddd"
+    }
+  },
+  "triggering_train_only_evidence": {
+    "input_scope": "two supplied training images only: quiz_0_041 and quiz_2_200",
+    "ground_truth_masks_or_official_validation_or_test_data_used": false,
+    "deterministic_full_vs_neural_only": {
+      "hard_mask_different_voxels": {
+        "quiz_0_041": 0,
+        "quiz_2_200": 0
+      },
+      "neural_bag_hash_sequences_equal": true,
+      "subtype_decisions_equal": true,
+      "maximum_absolute_probability_delta": 0.0
+    },
+    "deterministic_stock_vs_current_candidate_hard_mask_different_voxels": {
+      "quiz_0_041": 5,
+      "quiz_2_200": 15
+    },
+    "geometry_dtype_affine_and_header_gates_passed": true,
+    "stock_exact_mask_gate_passed_before_repair": false
+  },
+  "root_cause_evidence": {
+    "stock_behavior": "Stock nnUNetv2 accumulates stitched logits in float16 and sends the resulting float16 NumPy array to export resampling.",
+    "current_v5_behavior": "Both v5 extractors accumulate stitched logits in float16 but apply one terminal .float().cpu() conversion before export resampling.",
+    "resampling_behavior": "The installed resample_data_or_seg_to_shape path preserves its input dtype, so the terminal conversion changes interpolation precision at the final argmax boundary.",
+    "controlled_same_logit_reexport": {
+      "float16_export_vs_stock_different_voxels": {
+        "quiz_0_041": 0,
+        "quiz_2_200": 0
+      },
+      "float32_export_vs_current_candidate_different_voxels": {
+        "quiz_0_041": 0,
+        "quiz_2_200": 0
+      },
+      "float32_export_vs_stock_different_voxels": {
+        "quiz_0_041": 5,
+        "quiz_2_200": 15
+      }
+    },
+    "interpretation": "The remaining stock mismatch is caused solely by terminal export-logit dtype, not nondeterminism, model weights, sliding-window accumulation, feature extraction, the neural head, or class decisions."
+  },
+  "repair_contract": {
+    "permitted_source_files": [
+      "src/pancreas_multitask/case_feature_extractor.py",
+      "src/pancreas_multitask/neural_case_predictor.py"
+    ],
+    "only_permitted_semantic_change": "Remove the terminal float32 cast from the cropped stitched segmentation-logit tensor in both extractors so the existing float16 accumulator reaches stock nnUNet export resampling as float16.",
+    "required_resulting_export_logit_dtype": "torch.float16",
+    "must_apply_identically_to": [
+      "full_v5_reference",
+      "dependency_pruned_neural_only_candidate"
+    ],
+    "runtime_provenance_must_record_and_verify_export_logit_dtype": true,
+    "installed_nnunet_source_must_remain_byte_identical": true,
+    "narrow_override": {
+      "overridden_lock": "configs/inference_determinism_conformance_v1.json",
+      "overridden_prohibition": "preprocessing_or_export_semantics",
+      "scope": "only_the_two_terminal_float32_casts_described_above",
+      "every_other_prohibition_remains_in_force": true
+    }
+  },
+  "prohibited_changes": [
+    "model_weights_or_architecture",
+    "encoder_decoder_or_rescue_head_state",
+    "neural_case_head_state_or_class_offsets",
+    "feature_definitions_values_ranking_or_aggregation",
+    "neural_bag_arrays_hashes_or_head_probabilities",
+    "preprocessing",
+    "sliding_window_slicers_or_accumulation",
+    "TTA_views_order_or_mirror_axes",
+    "tile_step_size_or_batch_sizes",
+    "Gaussian_weighting",
+    "postprocessing",
+    "relaxation_of_any_exact_equivalence_gate"
+  ],
+  "validation_before_official_use": {
+    "unit_tests_for_float16_export_provenance_and_fail_closed_auditing": true,
+    "fresh_process_full_vs_neural_only_on_the_same_two_train_only_cases": true,
+    "fresh_process_stock_vs_candidate_on_the_same_two_train_only_cases": true,
+    "full_vs_neural_only_exact_hard_masks_required": true,
+    "full_vs_neural_only_exact_neural_bag_hash_sequence_required": true,
+    "full_vs_neural_only_exact_subtype_decisions_required": true,
+    "full_vs_neural_only_maximum_absolute_probability_delta": 0.000001,
+    "stock_vs_candidate_exact_hard_masks_required": true,
+    "official_validation_or_test_inputs_or_targets_allowed": false
+  },
+  "timing_policy": {
+    "pre_repair_timings_are_diagnostic_only": true,
+    "final_speed_arms_must_bind_this_lock_and_the_float16_export_provenance": true,
+    "performance_acceptance_thresholds_unchanged": true,
+    "no_official_or_test_timing_before_final_candidate_hash_lock": true
+  },
+  "claim_boundary": {
+    "repair_type": "post_lock_terminal_export_dtype_conformance_repair",
+    "candidate_model_or_class_decision_changed": false,
+    "segmentation_boundary_voxels_may_change_only_to_restore_stock_float16_export_semantics": true,
+    "numerical_gate_relaxed": false,
+    "must_be_disclosed_in_report_and_final_manifest": true
+  }
+}
