@@ -193,6 +193,33 @@ def test_balanced_sampler_is_seeded_replacement_sampling() -> None:
     assert np.unique(first).size < first.size
 
 
+def test_deterministic_execution_requires_exact_workspace_and_disables_tf32(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CUBLAS_WORKSPACE_CONFIG", ":16:8")
+    with pytest.raises(ValueError, match="CUBLAS_WORKSPACE_CONFIG=:4096:8"):
+        configure_deterministic_execution(torch.device("cpu"))
+
+    monkeypatch.delenv("CUBLAS_WORKSPACE_CONFIG")
+    audit = configure_deterministic_execution(torch.device("cpu"))
+    assert audit["cublas_workspace_config"] == ":4096:8"
+    assert audit["torch_deterministic_algorithms"] is True
+    assert audit["cudnn_benchmark"] is False
+    assert audit["cudnn_deterministic"] is True
+    assert audit["cuda_matmul_tf32"] is False
+    assert audit["cudnn_tf32"] is False
+
+
+def test_deterministic_execution_rejects_initialized_cuda(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    monkeypatch.setattr(torch.cuda, "is_initialized", lambda: True)
+
+    with pytest.raises(RuntimeError, match="before CUDA initialization"):
+        configure_deterministic_execution(torch.device("cuda"))
+
+
 def test_exact_reference_cache_binding_rejects_any_tamper() -> None:
     binding = {
         "checkpoint_sha256": CHECKPOINT_SHA256,

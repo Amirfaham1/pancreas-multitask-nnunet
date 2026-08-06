@@ -95,16 +95,25 @@ def schedule_from_lock(lock: Mapping[str, Any]) -> NeuralTrainingSchedule:
 def configure_deterministic_execution(device: torch.device) -> dict[str, Any]:
     """Enable deterministic operators before any v5 trajectory is launched."""
 
-    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    workspace = os.environ.get("CUBLAS_WORKSPACE_CONFIG")
+    if workspace not in (None, ":4096:8"):
+        raise ValueError("V5 training requires CUBLAS_WORKSPACE_CONFIG=:4096:8")
+    if device.type == "cuda" and torch.cuda.is_initialized():
+        raise RuntimeError("Determinism must be configured before CUDA initialization")
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     torch.use_deterministic_algorithms(True)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA neural training was requested but is unavailable")
     return {
         "torch_deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
         "cudnn_benchmark": bool(torch.backends.cudnn.benchmark),
         "cudnn_deterministic": bool(torch.backends.cudnn.deterministic),
+        "cuda_matmul_tf32": bool(torch.backends.cuda.matmul.allow_tf32),
+        "cudnn_tf32": bool(torch.backends.cudnn.allow_tf32),
         "cublas_workspace_config": os.environ["CUBLAS_WORKSPACE_CONFIG"],
         "mixed_precision": False,
     }
