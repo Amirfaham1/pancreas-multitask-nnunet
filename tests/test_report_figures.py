@@ -45,6 +45,26 @@ def test_ct_window_and_slice_selection_are_deterministic() -> None:
     assert figures._best_index(mask, 0) == 2
 
 
+def test_qualitative_row_label_is_compact_and_multiline() -> None:
+    label = figures._qualitative_row_label(
+        "weak",
+        "quiz_2_191",
+        {
+            "whole_pancreas_dice": "0.793472",
+            "lesion_dice": "0.0",
+            "reference_subtype": "2",
+            "predicted_subtype": "0",
+            "lesion_reference_voxels": "4248",
+        },
+    )
+    assert label.splitlines() == [
+        "weak: quiz_2_191",
+        "whole=0.793 | lesion=0.000",
+        "subtype ref/pred=2/0",
+        "ref lesion=4,248 vox",
+    ]
+
+
 def test_metric_figures_write_pdf_and_png(tmp_path: Path) -> None:
     metrics = {
         "classification": {

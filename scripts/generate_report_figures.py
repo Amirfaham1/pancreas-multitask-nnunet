@@ -269,6 +269,25 @@ def _window_ct(image: np.ndarray, *, center: float = 40.0, width: float = 400.0)
     return np.clip((image.astype(np.float32) - low) / (high - low), 0.0, 1.0)
 
 
+def _qualitative_row_label(
+    descriptor: str, case_id: str, metrics: Mapping[str, str]
+) -> str:
+    lines = [
+        f"{descriptor}: {case_id}",
+        (
+            f"whole={float(metrics['whole_pancreas_dice']):.3f} | "
+            f"lesion={float(metrics['lesion_dice']):.3f}"
+        ),
+    ]
+    if "reference_subtype" in metrics and "predicted_subtype" in metrics:
+        lines.append(
+            f"subtype ref/pred={metrics['reference_subtype']}/{metrics['predicted_subtype']}"
+        )
+    if "lesion_reference_voxels" in metrics:
+        lines.append(f"ref lesion={int(float(metrics['lesion_reference_voxels'])):,} vox")
+    return "\n".join(lines)
+
+
 def plot_qualitative_cases(
     rows: Sequence[Mapping[str, str]],
     images: Path,
@@ -280,7 +299,7 @@ def plot_qualitative_cases(
 ) -> list[Path]:
     selected = select_qualitative_cases(rows)
     row_lookup = {str(row["case_id"]): row for row in rows}
-    figure, axes = plt.subplots(len(selected), 3, figsize=(11.0, 10.5), constrained_layout=True)
+    figure, axes = plt.subplots(len(selected), 3, figsize=(12.0, 10.5), constrained_layout=True)
     orientation_names = ("Sagittal", "Coronal", "Axial")
     for row_index, case_id in enumerate(selected):
         image, image_affine = _load_volume(images / f"{case_id}_0000.nii.gz")
@@ -317,18 +336,13 @@ def plot_qualitative_cases(
             panel.set_yticks([])
         metrics = row_lookup[case_id]
         descriptor = "weak" if row_index < 2 else "strong"
-        subtype_text = ""
-        if "reference_subtype" in metrics and "predicted_subtype" in metrics:
-            subtype_text = (
-                f"; subtype={metrics['reference_subtype']}/{metrics['predicted_subtype']}"
-            )
-        lesion_size_text = ""
-        if "lesion_reference_voxels" in metrics:
-            lesion_size_text = f"; ref lesion={int(float(metrics['lesion_reference_voxels'])):,} vox"
         axes[row_index, 0].set_ylabel(
-            f"{descriptor}: {case_id}\nwhole={float(metrics['whole_pancreas_dice']):.3f}; "
-            f"lesion={float(metrics['lesion_dice']):.3f}{subtype_text}{lesion_size_text}",
-            fontsize=8.5,
+            _qualitative_row_label(descriptor, case_id, metrics),
+            fontsize=8.0,
+            rotation=0,
+            horizontalalignment="right",
+            verticalalignment="center",
+            labelpad=7,
         )
     legend = [
         Line2D([0], [0], color=GREEN, linewidth=1.7, label="Reference pancreas"),
