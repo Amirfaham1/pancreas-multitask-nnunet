@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import torch
@@ -32,6 +32,139 @@ from pancreas_multitask.case_features import (
 MIL_GRID = (4, 4, 6)
 MIL_STAGE_INDEX = 3
 MIL_TOP_K = 3
+LOCKED_NETWORK_MICROBATCH_CEILING = 2
+
+
+def _validate_batch_size(value: int, *, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{name} must be an integer")
+    if value < 1:
+        raise ValueError(f"{name} must be positive")
+    if value > LOCKED_NETWORK_MICROBATCH_CEILING:
+        raise ValueError(
+            f"{name} cannot exceed the locked network microbatch ceiling "
+            f"of {LOCKED_NETWORK_MICROBATCH_CEILING}"
+        )
+    return value
+
+
+@dataclass(slots=True)
+class FeatureExtractionRuntimeCounters:
+    """Auditable scheduling state shared across extracted cases.
+
+    Tile and mirror-view batching consume the same network microbatch budget.
+    The prospective speed arms request ``1/1`` or ``2/2`` respectively; a
+    two-tile group therefore runs one view per network call, while a one-tile
+    group may run two views per call. Adaptive limits persist across cases so
+    an OOM fallback can never be hidden by the next case.
+    """
+
+    tile_batch_size_requested: int = 1
+    tta_batch_size_requested: int = 1
+    tile_batch_size_adaptive_limit: int = field(init=False)
+    tta_batch_size_adaptive_limit: int = field(init=False)
+    tile_batch_oom_fallback_count: int = 0
+    tta_batch_oom_fallback_count: int = 0
+    logical_tile_batches_completed: int = 0
+    logical_tiles_completed: int = 0
+    tta_view_batches_completed: int = 0
+    tta_views_completed: int = 0
+    shared_network_forward_calls: int = 0
+    maximum_network_batch_size_observed: int = 0
+    network_batch_size_histogram: dict[int, int] = field(default_factory=dict)
+    tile_batch_size_histogram: dict[int, int] = field(default_factory=dict)
+    tta_batch_size_histogram: dict[int, int] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.tile_batch_size_requested = _validate_batch_size(
+            self.tile_batch_size_requested,
+            name="tile_batch_size_requested",
+        )
+        self.tta_batch_size_requested = _validate_batch_size(
+            self.tta_batch_size_requested,
+            name="tta_batch_size_requested",
+        )
+        self.tile_batch_size_adaptive_limit = self.tile_batch_size_requested
+        self.tta_batch_size_adaptive_limit = self.tta_batch_size_requested
+
+    @property
+    def network_batch_size_limit(self) -> int:
+        return max(
+            self.tile_batch_size_requested,
+            self.tta_batch_size_requested,
+        )
+
+    @staticmethod
+    def is_out_of_memory_error(error: RuntimeError) -> bool:
+        return isinstance(error, torch.OutOfMemoryError) or (
+            "out of memory" in str(error).lower()
+        )
+
+    def record_network_forward(self, batch_size: int) -> None:
+        if batch_size < 1 or batch_size > self.network_batch_size_limit:
+            raise RuntimeError(
+                "Shared encoder network batch exceeds the locked scheduling limit: "
+                f"observed={batch_size}, limit={self.network_batch_size_limit}"
+            )
+        self.shared_network_forward_calls += 1
+        self.maximum_network_batch_size_observed = max(
+            self.maximum_network_batch_size_observed,
+            batch_size,
+        )
+        self.network_batch_size_histogram[batch_size] = (
+            self.network_batch_size_histogram.get(batch_size, 0) + 1
+        )
+
+    def record_tile_batch(self, batch_size: int) -> None:
+        self.logical_tile_batches_completed += 1
+        self.logical_tiles_completed += batch_size
+        self.tile_batch_size_histogram[batch_size] = (
+            self.tile_batch_size_histogram.get(batch_size, 0) + 1
+        )
+
+    def record_tta_batch(self, view_count: int) -> None:
+        self.tta_view_batches_completed += 1
+        self.tta_views_completed += view_count
+        self.tta_batch_size_histogram[view_count] = (
+            self.tta_batch_size_histogram.get(view_count, 0) + 1
+        )
+
+    def provenance(self) -> dict[str, object]:
+        return {
+            "joint_network_forward_calls": self.shared_network_forward_calls,
+            "shared_network_forward_calls": self.shared_network_forward_calls,
+            "maximum_network_batch_size_observed": (
+                self.maximum_network_batch_size_observed
+            ),
+            "network_batch_size_histogram": {
+                str(size): count
+                for size, count in sorted(self.network_batch_size_histogram.items())
+            },
+            "network_batch_size_limit": self.network_batch_size_limit,
+            "locked_network_microbatch_ceiling": (
+                LOCKED_NETWORK_MICROBATCH_CEILING
+            ),
+            "logical_tile_batches_completed": self.logical_tile_batches_completed,
+            "logical_tiles_completed": self.logical_tiles_completed,
+            "tile_batch_oom_fallback_count": self.tile_batch_oom_fallback_count,
+            "tile_batch_size_adaptive_limit": (
+                self.tile_batch_size_adaptive_limit
+            ),
+            "tile_batch_size_histogram": {
+                str(size): count
+                for size, count in sorted(self.tile_batch_size_histogram.items())
+            },
+            "tile_batch_size_requested": self.tile_batch_size_requested,
+            "tta_batch_oom_fallback_count": self.tta_batch_oom_fallback_count,
+            "tta_batch_size_adaptive_limit": self.tta_batch_size_adaptive_limit,
+            "tta_batch_size_histogram": {
+                str(size): count
+                for size, count in sorted(self.tta_batch_size_histogram.items())
+            },
+            "tta_batch_size_requested": self.tta_batch_size_requested,
+            "tta_view_batches_completed": self.tta_view_batches_completed,
+            "tta_views_completed": self.tta_views_completed,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,12 +258,41 @@ def mirror_mean_tile_batch_features(
     data: Tensor,
     *,
     allowed_mirroring_axes: Sequence[int] | None,
+    tta_batch_size: int = 1,
+    runtime_counters: FeatureExtractionRuntimeCounters | None = None,
 ) -> TileBatchFeatures:
-    """Average predictions and invariant features over declared mirror views."""
+    """Average predictions and invariant features over declared mirror views.
+
+    The batch-one TTA arm deliberately remains on the original one-view loop.
+    For the candidate arm, consecutive views may share a forward only when the
+    tile batch leaves capacity under the common network microbatch limit.
+    """
 
     if data.ndim != 5 or data.shape[0] < 1:
         raise ValueError("data must have shape (batch, channels, D, H, W)")
+    tta_batch_size = _validate_batch_size(
+        tta_batch_size,
+        name="tta_batch_size",
+    )
+    if runtime_counters is None:
+        runtime_counters = FeatureExtractionRuntimeCounters(
+            tile_batch_size_requested=min(
+                int(data.shape[0]),
+                LOCKED_NETWORK_MICROBATCH_CEILING,
+            ),
+            tta_batch_size_requested=tta_batch_size,
+        )
+    elif runtime_counters.tta_batch_size_requested != tta_batch_size:
+        raise ValueError(
+            "Runtime counters and mirror extraction request different TTA batch sizes"
+        )
+    if data.shape[0] > runtime_counters.network_batch_size_limit:
+        raise ValueError(
+            "Tile batch exceeds the shared network microbatch limit: "
+            f"tiles={data.shape[0]}, limit={runtime_counters.network_batch_size_limit}"
+        )
     combinations = _mirror_combinations(allowed_mirroring_axes)
+    view_axes = ((), *combinations[1:])
     segmentation_sum: Tensor | None = None
     feature_sum: Tensor | None = None
     logit_sum: Tensor | None = None
@@ -139,9 +301,20 @@ def mirror_mean_tile_batch_features(
     mil_prediction_sum: Tensor | None = None
     feature_names: tuple[str, ...] | None = None
 
-    for axes in combinations:
-        view = torch.flip(data, axes) if axes else data
-        segmentation, skips, logits = _forward_shared_network(network, view)
+    def accumulate_view(
+        axes: tuple[int, ...],
+        segmentation: Tensor,
+        skips: Sequence[Tensor],
+        logits: Tensor,
+    ) -> None:
+        nonlocal segmentation_sum
+        nonlocal feature_sum
+        nonlocal logit_sum
+        nonlocal probability_sum
+        nonlocal mil_stage3_sum
+        nonlocal mil_prediction_sum
+        nonlocal feature_names
+
         pooled, names = pool_multiscale_encoder_features(skips, segmentation)
         probabilities = torch.softmax(logits.float(), dim=1)
         segmentation_probabilities = torch.softmax(segmentation.float(), dim=1)
@@ -185,6 +358,89 @@ def mirror_mean_tile_batch_features(
         mil_prediction_sum = (
             prediction_map if mil_prediction_sum is None else mil_prediction_sum + prediction_map
         )
+
+    # Keep the prospective reference byte-for-byte on its original sequence:
+    # one network call and one accumulator update per mirror view.
+    if tta_batch_size == 1:
+        for axes in view_axes:
+            view = torch.flip(data, axes) if axes else data
+            runtime_counters.record_network_forward(int(view.shape[0]))
+            segmentation, skips, logits = _forward_shared_network(network, view)
+            accumulate_view(axes, segmentation, skips, logits)
+            runtime_counters.record_tta_batch(1)
+    else:
+        base_batch_size = int(data.shape[0])
+        active_tta_batch_size = min(
+            runtime_counters.tta_batch_size_adaptive_limit,
+            max(1, runtime_counters.network_batch_size_limit // base_batch_size),
+        )
+        view_index = 0
+        while view_index < len(view_axes):
+            batch_axes = view_axes[view_index : view_index + active_tta_batch_size]
+            batched_input: Tensor | None = None
+            try:
+                if len(batch_axes) == 1:
+                    axes = batch_axes[0]
+                    batched_input = torch.flip(data, axes) if axes else data
+                else:
+                    batched_input = torch.cat(
+                        [
+                            torch.flip(data, axes) if axes else data
+                            for axes in batch_axes
+                        ],
+                        dim=0,
+                    )
+                runtime_counters.record_network_forward(int(batched_input.shape[0]))
+                batched_segmentation, batched_skips, batched_logits = (
+                    _forward_shared_network(network, batched_input)
+                )
+            except RuntimeError as error:
+                if (
+                    active_tta_batch_size == 1
+                    or not runtime_counters.is_out_of_memory_error(error)
+                ):
+                    raise
+                del batched_input
+                empty_cache(data.device)
+                active_tta_batch_size = max(1, active_tta_batch_size // 2)
+                runtime_counters.tta_batch_size_adaptive_limit = (
+                    active_tta_batch_size
+                )
+                runtime_counters.tta_batch_oom_fallback_count += 1
+                continue
+
+            view_count = len(batch_axes)
+            expected_network_batch = view_count * base_batch_size
+            if batched_segmentation.shape[0] != expected_network_batch:
+                raise ValueError("Segmentation batch cannot be restored to TTA views")
+            if batched_logits.shape[0] != expected_network_batch:
+                raise ValueError("Classification batch cannot be restored to TTA views")
+            if any(skip.shape[0] != expected_network_batch for skip in batched_skips):
+                raise ValueError("Encoder batch cannot be restored to TTA views")
+
+            segmentation_views = batched_segmentation.reshape(
+                view_count,
+                base_batch_size,
+                *batched_segmentation.shape[1:],
+            )
+            logit_views = batched_logits.reshape(
+                view_count,
+                base_batch_size,
+                *batched_logits.shape[1:],
+            )
+            skip_views = tuple(
+                skip.reshape(view_count, base_batch_size, *skip.shape[1:])
+                for skip in batched_skips
+            )
+            for local_index, axes in enumerate(batch_axes):
+                accumulate_view(
+                    axes,
+                    segmentation_views[local_index],
+                    tuple(skip[local_index] for skip in skip_views),
+                    logit_views[local_index],
+                )
+            runtime_counters.record_tta_batch(view_count)
+            view_index += view_count
 
     if any(
         value is None
@@ -241,15 +497,33 @@ def extract_case_from_preprocessed(
     input_image: Tensor,
     *,
     tile_batch_size: int = 1,
+    tta_batch_size: int = 1,
+    runtime_counters: FeatureExtractionRuntimeCounters | None = None,
 ) -> CaseExtraction:
     """Extract one full case while preserving predictor tile/TTA semantics."""
 
     if not isinstance(input_image, Tensor) or input_image.ndim != 4:
         raise ValueError("input_image must have shape (channels, D, H, W)")
-    if isinstance(tile_batch_size, bool) or not isinstance(tile_batch_size, int):
-        raise TypeError("tile_batch_size must be an integer")
-    if tile_batch_size < 1:
-        raise ValueError("tile_batch_size must be positive")
+    tile_batch_size = _validate_batch_size(
+        tile_batch_size,
+        name="tile_batch_size",
+    )
+    tta_batch_size = _validate_batch_size(
+        tta_batch_size,
+        name="tta_batch_size",
+    )
+    if runtime_counters is None:
+        runtime_counters = FeatureExtractionRuntimeCounters(
+            tile_batch_size_requested=tile_batch_size,
+            tta_batch_size_requested=tta_batch_size,
+        )
+    elif (
+        runtime_counters.tile_batch_size_requested != tile_batch_size
+        or runtime_counters.tta_batch_size_requested != tta_batch_size
+    ):
+        raise ValueError(
+            "Runtime counters must be configured for the requested tile/TTA batches"
+        )
     network = getattr(predictor, "network", None)
     device = getattr(predictor, "device", None)
     configuration = getattr(predictor, "configuration_manager", None)
@@ -301,16 +575,40 @@ def extract_case_from_preprocessed(
     mirror_axes = predictor.allowed_mirroring_axes if predictor.use_mirroring else None
     autocast = torch.autocast(device.type, enabled=device.type == "cuda")
     with autocast:
-        for batch_start in range(0, len(slicers), tile_batch_size):
-            batch_slicers = slicers[batch_start : batch_start + tile_batch_size]
-            work = torch.cat([padded_on_results[item][None] for item in batch_slicers], dim=0).to(
-                device, memory_format=torch.contiguous_format
-            )
-            extracted = mirror_mean_tile_batch_features(
-                network,
-                work,
-                allowed_mirroring_axes=mirror_axes,
-            )
+        active_tile_batch_size = runtime_counters.tile_batch_size_adaptive_limit
+        batch_start = 0
+        while batch_start < len(slicers):
+            batch_slicers = slicers[
+                batch_start : batch_start + active_tile_batch_size
+            ]
+            work: Tensor | None = None
+            try:
+                work = torch.cat(
+                    [padded_on_results[item][None] for item in batch_slicers],
+                    dim=0,
+                ).to(device, memory_format=torch.contiguous_format)
+                extracted = mirror_mean_tile_batch_features(
+                    network,
+                    work,
+                    allowed_mirroring_axes=mirror_axes,
+                    tta_batch_size=tta_batch_size,
+                    runtime_counters=runtime_counters,
+                )
+            except RuntimeError as error:
+                if (
+                    active_tile_batch_size == 1
+                    or not runtime_counters.is_out_of_memory_error(error)
+                ):
+                    raise
+                del work
+                empty_cache(device)
+                active_tile_batch_size = max(1, active_tile_batch_size // 2)
+                runtime_counters.tile_batch_size_adaptive_limit = (
+                    active_tile_batch_size
+                )
+                runtime_counters.tile_batch_oom_fallback_count += 1
+                continue
+
             batch_centers = centers[batch_start : batch_start + len(batch_slicers)].to(
                 extracted.segmentation_logits.device
             )
@@ -342,6 +640,8 @@ def extract_case_from_preprocessed(
             mil_prediction_rows.extend(
                 extracted.mil_prediction_maps.detach().half().cpu().numpy().astype(np.float16)
             )
+            runtime_counters.record_tile_batch(len(batch_slicers))
+            batch_start += len(batch_slicers)
 
     torch.div(predicted_logits, n_predictions, out=predicted_logits)
     if not torch.isfinite(predicted_logits).all():
@@ -373,10 +673,12 @@ def extract_case_from_preprocessed(
 
 
 __all__ = [
+    "LOCKED_NETWORK_MICROBATCH_CEILING",
     "MIL_GRID",
     "MIL_STAGE_INDEX",
     "MIL_TOP_K",
     "CaseExtraction",
+    "FeatureExtractionRuntimeCounters",
     "TileBatchFeatures",
     "extract_case_from_preprocessed",
     "mirror_mean_tile_batch_features",

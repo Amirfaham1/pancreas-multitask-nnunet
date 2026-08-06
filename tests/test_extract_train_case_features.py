@@ -20,6 +20,10 @@ def test_all_prospective_lock_hash_constants_match_committed_files() -> None:
         ROOT / "configs" / "phd_neural_case_head_lock_v5.json",
         ROOT / "configs" / "phd_neural_decision_lock_v5.json",
     )
+    assert (
+        MODULE.file_sha256(ROOT / "configs" / "inference_speed_benchmark.json")
+        == MODULE.EXPECTED_SPEED_LOCK_SHA256
+    )
 
 
 def _write_cache(path: Path, binding: dict[str, object]) -> None:
@@ -44,6 +48,8 @@ def test_cache_resume_requires_every_exact_provenance_binding(tmp_path: Path) ->
         "implementation_sha256": "implementation",
         "tile_step_size": 0.5,
         "tile_batch_size": 1,
+        "tta_batch_size": 1,
+        "network_batch_size_limit": 1,
         "tta_enabled": True,
     }
     complete = tmp_path / "complete.npz"
@@ -88,4 +94,40 @@ def test_cache_resume_rejects_wrong_bound_value(tmp_path: Path) -> None:
             expected_dimensions={"first": 1, "second": 1},
             expected_tile_feature_count=2,
             expected_binding={"tile_batch_size": 2},
+        )
+
+
+def test_cli_accepts_only_the_two_prospectively_locked_batch_arms(tmp_path: Path) -> None:
+    common = [
+        "--train-root",
+        str(tmp_path / "train"),
+        "--model",
+        str(tmp_path / "model"),
+        "--output",
+        str(tmp_path / "output"),
+        "--device",
+        "cpu",
+    ]
+    parser = MODULE.build_parser()
+    reference = parser.parse_args(common)
+    assert (reference.tile_batch_size, reference.tta_batch_size) == (1, 1)
+    candidate = parser.parse_args(
+        [*common, "--tile-batch-size", "2", "--tta-batch-size", "2"]
+    )
+    MODULE._validate_locked_batch_configuration(
+        reference.tile_batch_size,
+        reference.tta_batch_size,
+    )
+    MODULE._validate_locked_batch_configuration(
+        candidate.tile_batch_size,
+        candidate.tta_batch_size,
+    )
+
+    asymmetric = parser.parse_args(
+        [*common, "--tile-batch-size", "1", "--tta-batch-size", "2"]
+    )
+    with pytest.raises(ValueError, match="only reference batches 1/1"):
+        MODULE._validate_locked_batch_configuration(
+            asymmetric.tile_batch_size,
+            asymmetric.tta_batch_size,
         )

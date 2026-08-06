@@ -27,6 +27,8 @@ from pancreas_multitask.case_classifier_selection import (
     load_locked_search,
 )
 from pancreas_multitask.case_feature_extractor import (
+    LOCKED_NETWORK_MICROBATCH_CEILING,
+    FeatureExtractionRuntimeCounters,
     extract_case_from_preprocessed,
 )
 from pancreas_multitask.case_features import (
@@ -52,11 +54,26 @@ EXPECTED_PLANS_SHA256 = "8596a9cf4af2a0d6d2b8248e127f3514274d3bb13585491483fa630
 EXPECTED_DATASET_JSON_SHA256 = (
     "4d35b17a700f2f92d0faa00f3db5cf056eb49f161db5a218ab1f641d22ae49ff"
 )
+EXPECTED_SPEED_LOCK_SHA256 = (
+    "d8bfa51b40de6676db76227442540a505bac2e5965cbe7f8c1fa1940669271dc"
+)
+SPEED_LOCK_PATH = ROOT / "configs" / "inference_speed_benchmark.json"
 EXPECTED_COMPONENT_HASHES = {
     "encoder": "324f5f75debb9885e270102a8222ed3248483ea21ff2bb6fb0177730f2b85ff1",
     "decoder": "b38d332ce7d812b98b03389777a303f6e739a789cc685cbf4d52a413ba4711f2",
     "classification": "1c6378fe0a2f8e792b183c8b0333b164bf2d67951147c96fadae390bd7cc6df8",
 }
+
+
+def _validate_locked_batch_configuration(
+    tile_batch_size: int,
+    tta_batch_size: int,
+) -> None:
+    if (tile_batch_size, tta_batch_size) not in ((1, 1), (2, 2)):
+        raise ValueError(
+            "The locked extraction permits only reference batches 1/1 or "
+            "candidate batches 2/2"
+        )
 
 
 def _validate_static_lock_hashes(
@@ -278,6 +295,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
     parser.add_argument("--tile-step-size", type=float, default=0.5)
     parser.add_argument("--tile-batch-size", type=int, default=1)
+    parser.add_argument("--tta-batch-size", type=int, default=1)
     parser.add_argument("--expected-cases", type=int, default=252)
     parser.add_argument(
         "--smoke-case-id",
@@ -296,8 +314,10 @@ def run(args: argparse.Namespace) -> Path:
         raise ValueError("--fold must be non-negative")
     if float(args.tile_step_size) != 0.5:
         raise ValueError("The locked neural extraction requires --tile-step-size 0.5")
-    if args.tile_batch_size < 1:
-        raise ValueError("--tile-batch-size must be positive")
+    _validate_locked_batch_configuration(
+        args.tile_batch_size,
+        args.tta_batch_size,
+    )
     output = args.output.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
     cache_directory = output / "case_cache"
@@ -310,6 +330,9 @@ def run(args: argparse.Namespace) -> Path:
         neural_lock_path,
         neural_decision_lock_path,
     )
+    speed_lock_hash = file_sha256(SPEED_LOCK_PATH)
+    if speed_lock_hash != EXPECTED_SPEED_LOCK_SHA256:
+        raise ValueError("Shared-microbatch speed lock differs from its expected hash")
     lock = load_locked_search(lock_path)
     neural_lock = json.loads(neural_lock_path.read_text(encoding="utf-8"))
     if neural_lock.get("lock_status") != (
@@ -409,10 +432,19 @@ def run(args: argparse.Namespace) -> Path:
         "neural_lock_sha256": neural_lock_hash,
         "implementation_sha256": implementation_hash,
         "neural_decision_lock_sha256": EXPECTED_V5_DECISION_LOCK_SHA256,
+        "speed_lock_sha256": speed_lock_hash,
         "plans_sha256": plans_hash,
         "dataset_json_sha256": dataset_json_hash,
         "tile_step_size": float(args.tile_step_size),
         "tile_batch_size": int(args.tile_batch_size),
+        "tta_batch_size": int(args.tta_batch_size),
+        "network_batch_size_limit": max(
+            int(args.tile_batch_size),
+            int(args.tta_batch_size),
+        ),
+        "locked_network_microbatch_ceiling": (
+            LOCKED_NETWORK_MICROBATCH_CEILING
+        ),
         "tta_enabled": True,
         "gaussian_enabled": True,
     }
@@ -449,6 +481,10 @@ def run(args: argparse.Namespace) -> Path:
     if device.type == "cuda":
         torch.cuda.synchronize(device)
         torch.cuda.reset_peak_memory_stats(device)
+    extraction_runtime = FeatureExtractionRuntimeCounters(
+        tile_batch_size_requested=args.tile_batch_size,
+        tta_batch_size_requested=args.tta_batch_size,
+    )
 
     for index, case in enumerate(cases, start=1):
         cache_path = cache_directory / _case_cache_name(case.case_id)
@@ -492,6 +528,8 @@ def run(args: argparse.Namespace) -> Path:
                 predictor,
                 input_tensor,
                 tile_batch_size=args.tile_batch_size,
+                tta_batch_size=args.tta_batch_size,
+                runtime_counters=extraction_runtime,
             )
             predicted_segmentation = (
                 extraction.segmentation_logits.argmax(dim=0).numpy().astype(np.uint8)
@@ -517,6 +555,12 @@ def run(args: argparse.Namespace) -> Path:
                     extraction.segmentation_logits,
                     reference_segmentation,
                 )
+                extracted_labels = extraction.segmentation_logits.argmax(dim=0)
+                reference_labels = reference_segmentation.argmax(dim=0)
+                disagreeing_voxels = int(
+                    torch.count_nonzero(extracted_labels != reference_labels).item()
+                )
+                disagreement_fraction = disagreeing_voxels / extracted_labels.numel()
                 maximum_logit_difference = float(
                     torch.max(
                         torch.abs(
@@ -544,23 +588,52 @@ def run(args: argparse.Namespace) -> Path:
                         )
                     )
                 )
-                if not segmentation_equal or probability_maximum_difference > 1e-6:
+                reference_schedule = (
+                    args.tile_batch_size == 1 and args.tta_batch_size == 1
+                )
+                if reference_schedule:
+                    segmentation_passes = segmentation_equal
+                    rescue_tolerance = 1e-6
+                    comparison_contract = "exact_production_batch_one"
+                else:
+                    segmentation_passes = (
+                        disagreeing_voxels <= 16
+                        and disagreement_fraction <= 1e-5
+                    )
+                    rescue_tolerance = 1e-4
+                    comparison_contract = (
+                        "amended_train_only_speed_lock_numerical_equivalence"
+                    )
+                probability_passes = (
+                    probability_maximum_difference <= rescue_tolerance
+                )
+                if not segmentation_passes or not probability_passes:
                     raise RuntimeError(
-                        "Feature extractor does not match production batch-one inference"
+                        "Feature extractor violates its locked production-equivalence "
+                        "contract"
                     )
                 smoke_equivalence = {
-                    "production_batch_one_segmentation_logits_exactly_equal": True,
+                    "comparison_contract": comparison_contract,
+                    "comparison_passed": True,
+                    "production_batch_one_segmentation_logits_exactly_equal": (
+                        segmentation_equal
+                    ),
                     "maximum_segmentation_logit_absolute_difference": maximum_logit_difference,
                     "predicted_segmentation_labels_exactly_equal": bool(
-                        torch.equal(
-                            extraction.segmentation_logits.argmax(dim=0),
-                            reference_segmentation.argmax(dim=0),
-                        )
+                        disagreeing_voxels == 0
+                    ),
+                    "hard_mask_disagreeing_voxels": disagreeing_voxels,
+                    "hard_mask_disagreement_fraction": disagreement_fraction,
+                    "hard_mask_disagreeing_voxels_maximum": (
+                        0 if reference_schedule else 16
+                    ),
+                    "hard_mask_disagreement_fraction_maximum": (
+                        0.0 if reference_schedule else 1e-5
                     ),
                     "rescue_probability_maximum_absolute_difference": (
                         probability_maximum_difference
                     ),
-                    "rescue_probability_tolerance": 1e-6,
+                    "rescue_probability_tolerance": rescue_tolerance,
                 }
             current_names = {name: built_views[name].names for name in view_names}
             if feature_names is None:
@@ -723,6 +796,8 @@ def run(args: argparse.Namespace) -> Path:
         "feature_lock_sha256": feature_lock_hash,
         "neural_lock_name": neural_lock_path.name,
         "neural_lock_sha256": neural_lock_hash,
+        "speed_lock_name": SPEED_LOCK_PATH.name,
+        "speed_lock_sha256": speed_lock_hash,
         "implementation_sha256": implementation_hash,
         "cache_binding": base_cache_binding,
         "feature_schema_sha256": _schema_sha256(
@@ -737,6 +812,12 @@ def run(args: argparse.Namespace) -> Path:
         "cache_manifest_sha256": cache_manifest_sha256,
         "cache_set_exact": True,
         "tile_batch_size": args.tile_batch_size,
+        "tta_batch_size": args.tta_batch_size,
+        "inference_execution": extraction_runtime.provenance(),
+        "cache_hit_count": sum(row["cache_hit"] for row in case_runtime_rows),
+        "cache_miss_count": sum(
+            not row["cache_hit"] for row in case_runtime_rows
+        ),
         "tile_step_size": args.tile_step_size,
         "tta_enabled": True,
         "gaussian_enabled": True,
