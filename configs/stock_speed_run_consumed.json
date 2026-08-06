@@ -1,0 +1,33 @@
+{
+    "schema_version":  1,
+    "status":  "started_and_consumed",
+    "stage":  "single_locked_stock_inference_speed_benchmark",
+    "benchmark_execution_id":  "5157352d-d34f-4f0d-9356-7cc062e1b68a",
+    "claimed_at_utc":  "2026-08-06T18:08:02.6131275Z",
+    "orchestrator_process_id":  33404,
+    "work_root":  "D:\\MLQuizWork\\phd_upgrade_v5\\stock_speed_locked_v5",
+    "final_candidate_lock":  {
+                                 "path":  "C:\\Users\\amirf\\OneDrive\\Desktop\\ML-Quiz-3DMedImg\\configs\\phd_final_candidate_lock_v5.json",
+                                 "sha256":  "8f508615ee0e6a0296506dbbc06f66e31dd46842cd585ef67f7c133c74c037db"
+                             },
+    "stock_gate_lock":  {
+                            "path":  "C:\\Users\\amirf\\OneDrive\\Desktop\\ML-Quiz-3DMedImg\\configs\\inference_speed_stock_gate_v1.json",
+                            "sha256":  "563d9d5e4fbe0f92653c6b7295c476d0ddf5d239c47beb1948410bbb80a7c2e2"
+                        },
+    "determinism_lock":  {
+                             "path":  "C:\\Users\\amirf\\OneDrive\\Desktop\\ML-Quiz-3DMedImg\\configs\\inference_determinism_conformance_v1.json",
+                             "sha256":  "33b5aed4027651f999875e2340a65173c620c5673f845a186115cd3a7adb1ddd"
+                         },
+    "stock_export_lock":  {
+                              "path":  "C:\\Users\\amirf\\OneDrive\\Desktop\\ML-Quiz-3DMedImg\\configs\\inference_stock_export_conformance_v1.json",
+                              "sha256":  "bf309ae1ff8475b0985089ac1db2ef6b35383be34d7eeda0e9c6e63478f19503"
+                          },
+    "run_order":  [
+                      "stock_reference_1",
+                      "candidate_1",
+                      "candidate_2",
+                      "stock_reference_2"
+                  ],
+    "intended_audit_path":  "D:\\MLQuizWork\\phd_upgrade_v5\\stock_speed_locked_v5\\stock_inference_speed_audit.json",
+    "test_targets_or_submission_feedback_used":  false
+}
