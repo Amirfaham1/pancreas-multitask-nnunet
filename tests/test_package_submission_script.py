@@ -64,7 +64,16 @@ def test_package_script_parses_as_powershell_without_running_it() -> None:
 def test_defaults_and_exact_submission_contract_are_fixed() -> None:
     assert r"D:\MLQuizWork\submission\Amirfaham_Fallahpour_results" in SOURCE
     assert r"D:\MLQuizWork\nnUNet_raw\Dataset501_PancreasMultitask\imagesTs" in SOURCE
-    assert 'Join-Path $PSScriptRoot "..\\delivery"' in SOURCE
+    parameter_block = SOURCE[SOURCE.index("param(") : SOURCE.index(")\n\nSet-StrictMode")]
+    assert "Join-Path $PSScriptRoot" not in parameter_block
+    body_start = SOURCE.index('$ErrorActionPreference = "Stop"')
+    delivery_default = SOURCE.index(
+        '$DeliveryRoot = Join-Path $PSScriptRoot "..\\delivery"', body_start
+    )
+    path_resolution = SOURCE.index(
+        "$requestedDeliveryRoot = [IO.Path]::GetFullPath($DeliveryRoot)", body_start
+    )
+    assert body_start < delivery_default < path_resolution
     assert "$expectedCount = 72" in SOURCE
     assert '$csvName = "subtype_results.csv"' in SOURCE
     assert '$archiveName = "Amirfaham_Fallahpour_results.zip"' in SOURCE

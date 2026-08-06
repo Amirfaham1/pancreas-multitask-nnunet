@@ -31,13 +31,19 @@ param(
         "D:\MLQuizWork\submission\Amirfaham_Fallahpour_results",
     [string] $TestImages =
         "D:\MLQuizWork\nnUNet_raw\Dataset501_PancreasMultitask\imagesTs",
-    [string] $DeliveryRoot = (Join-Path $PSScriptRoot "..\delivery"),
+    [string] $DeliveryRoot,
     [string] $PythonExecutable = "D:\MLQuizWork\.venv\Scripts\python.exe",
     [switch] $Force
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+# Windows PowerShell 5.1 can expose an empty `$PSScriptRoot while parameter
+# defaults are being bound. Resolve this script-relative default in the body.
+if ([string]::IsNullOrWhiteSpace($DeliveryRoot)) {
+    $DeliveryRoot = Join-Path $PSScriptRoot "..\delivery"
+}
 
 $expectedCount = 72
 $csvName = "subtype_results.csv"
