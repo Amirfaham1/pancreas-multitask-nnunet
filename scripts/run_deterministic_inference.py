@@ -282,6 +282,7 @@ def dispatch_deterministic_inference(
             "after_inference": None,
         },
         "stock_constructor_reassertion_count": 0,
+        "cuda_memory": None,
         "installed_sources_before": None,
         "installed_sources_after": None,
         "installed_sources_unchanged": False,
@@ -326,6 +327,25 @@ def dispatch_deterministic_inference(
                 constructor_snapshots,
             )
 
+        if device.type == "cuda":
+            audit["cuda_memory"] = {
+                "unit": "MiB",
+                "collector": "torch.cuda process-local memory counters",
+                "bootstrap_reset_before_target": mode == "stock",
+                "before_target": None,
+                "after_target": None,
+            }
+            if mode == "stock":
+                # Stock has no nested pre-CUDA configuration call. Candidate
+                # does, so CUDA must remain uninitialized until candidate.run.
+                torch.cuda.synchronize(device)
+                torch.cuda.reset_peak_memory_stats(device)
+                bytes_per_mib = 1024**2
+                audit["cuda_memory"]["before_target"] = {
+                    "allocated_mib": torch.cuda.memory_allocated(device) / bytes_per_mib,
+                    "reserved_mib": torch.cuda.memory_reserved(device) / bytes_per_mib,
+                }
+
         with _forwarded_argv(target_metadata["entry_point"], target_arguments):
             result = target()
         if result is None:
@@ -351,8 +371,28 @@ def dispatch_deterministic_inference(
 
         if configured:
             try:
+                configured_device = torch.device(audit["device"])
+                if configured_device.type == "cuda":
+                    torch.cuda.synchronize(configured_device)
+                    bytes_per_mib = 1024**2
+                    audit["cuda_memory"]["after_target"] = {
+                        "allocated_mib": (
+                            torch.cuda.memory_allocated(configured_device) / bytes_per_mib
+                        ),
+                        "reserved_mib": (
+                            torch.cuda.memory_reserved(configured_device) / bytes_per_mib
+                        ),
+                        "peak_allocated_mib": (
+                            torch.cuda.max_memory_allocated(configured_device)
+                            / bytes_per_mib
+                        ),
+                        "peak_reserved_mib": (
+                            torch.cuda.max_memory_reserved(configured_device)
+                            / bytes_per_mib
+                        ),
+                    }
                 final_snapshot = deterministic_inference_snapshot(
-                    torch.device(audit["device"])
+                    configured_device
                 )
                 audit["determinism_snapshots"]["after_inference"] = final_snapshot
                 assert_deterministic_inference(final_snapshot)

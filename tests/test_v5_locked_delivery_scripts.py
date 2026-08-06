@@ -85,9 +85,9 @@ def test_common_helper_hard_binds_every_known_final_artifact() -> None:
     for digest in (
         "a8c2147493718acc96e4aa5dc471bf3f3277f0b99e8a8f7620bf966ab7b70d11",
         "e28a303c7d3da5dc7857ecc72787b6746d1e689e83167c500d4d2823c5ea540f",
-    "3a57ab79147a6dd9ab4ee3fa99fdb2be978e9c60f290cead7a52298673e926aa",
-    "563d9d5e4fbe0f92653c6b7295c476d0ddf5d239c47beb1948410bbb80a7c2e2",
-    "33b5aed4027651f999875e2340a65173c620c5673f845a186115cd3a7adb1ddd",
+        "3a57ab79147a6dd9ab4ee3fa99fdb2be978e9c60f290cead7a52298673e926aa",
+        "563d9d5e4fbe0f92653c6b7295c476d0ddf5d239c47beb1948410bbb80a7c2e2",
+        "33b5aed4027651f999875e2340a65173c620c5673f845a186115cd3a7adb1ddd",
         "bf309ae1ff8475b0985089ac1db2ef6b35383be34d7eeda0e9c6e63478f19503",
     ):
         assert digest in COMMON_SOURCE
@@ -118,6 +118,15 @@ def test_final_lock_schema_and_code_manifest_are_fail_closed() -> None:
         "frozen_checkpoint_was_validation_selected",
         "baseline_test_inference_and_packaging_occurred_before_v5_extension",
         "baseline_test_inputs_were_a_v5_tuning_signal",
+        "stock_speed_protocol_deviations",
+        "post_stock_lock_train_only_conformance_artifacts_contained_timing_fields",
+        "diagnostic_conformance_timings_eligible_for_final_speed_arithmetic",
+        "candidate_implementation_changed_after_original_stock_lock",
+        "original_stock_lock_literal_compliance_was_perfect",
+        "repairs_were_limited_to_determinism_and_stock_export_conformance",
+        "each_repair_was_locked_before_its_implementation_edit",
+        "official_validation_or_test_data_used_for_repairs",
+        "model_weights_features_head_or_offsets_changed_by_repairs",
         "artifacts",
         "frozen_components",
         "inference_contract",
@@ -128,10 +137,17 @@ def test_final_lock_schema_and_code_manifest_are_fail_closed() -> None:
     ):
         assert field in COMMON_SOURCE
     for relative_path in (
+        "scripts/Set-QuizEnvironment.ps1",
         "scripts/predict_joint.py",
         "scripts/evaluate_predictions.py",
         "scripts/Package-Submission.ps1",
         "scripts/validate_submission.py",
+        "scripts/run_deterministic_inference.py",
+        "scripts/benchmark_inference_speed.py",
+        "scripts/Run-InferenceSpeedBenchmark.ps1",
+        "scripts/run_timed_inference_child.py",
+        "scripts/benchmark_stock_inference_speed.py",
+        "scripts/Run-StockInferenceSpeedBenchmark.ps1",
         "scripts/V5-LockedDeliveryCommon.ps1",
         "scripts/Run-V5LockedFinalEvaluation.ps1",
         "scripts/Run-V5LockedSelectedTestAndPackage.ps1",
@@ -757,10 +773,17 @@ def test_complete_final_candidate_lock_accepts_real_train_only_chain(
     if executable is None:
         pytest.skip("PowerShell is unavailable")
     implementation_paths = [
+        "scripts/Set-QuizEnvironment.ps1",
         "scripts/predict_joint.py",
         "scripts/evaluate_predictions.py",
         "scripts/Package-Submission.ps1",
         "scripts/validate_submission.py",
+        "scripts/run_deterministic_inference.py",
+        "scripts/benchmark_inference_speed.py",
+        "scripts/Run-InferenceSpeedBenchmark.ps1",
+        "scripts/run_timed_inference_child.py",
+        "scripts/benchmark_stock_inference_speed.py",
+        "scripts/Run-StockInferenceSpeedBenchmark.ps1",
         "scripts/V5-LockedDeliveryCommon.ps1",
         "scripts/Run-V5LockedFinalEvaluation.ps1",
         "scripts/Run-V5LockedSelectedTestAndPackage.ps1",
@@ -792,6 +815,19 @@ def test_complete_final_candidate_lock_accepts_real_train_only_chain(
             "baseline_test_inference_and_packaging_occurred_before_v5_extension": True,
             "baseline_test_inputs_were_a_v5_tuning_signal": False,
         },
+        "stock_speed_protocol_deviations": {
+            "post_stock_lock_train_only_conformance_artifacts_contained_"
+            "timing_fields": True,
+            "diagnostic_conformance_timings_eligible_for_final_speed_"
+            "arithmetic": False,
+            "candidate_implementation_changed_after_original_stock_lock": True,
+            "original_stock_lock_literal_compliance_was_perfect": False,
+            "repairs_were_limited_to_determinism_and_stock_export_"
+            "conformance": True,
+            "each_repair_was_locked_before_its_implementation_edit": True,
+            "official_validation_or_test_data_used_for_repairs": False,
+            "model_weights_features_head_or_offsets_changed_by_repairs": False,
+        },
         "artifacts": {
             "checkpoint": {
                 "name": "checkpoint_classification_rescue.pth",
@@ -821,6 +857,7 @@ def test_complete_final_candidate_lock_accepts_real_train_only_chain(
             "results_on_cpu": False,
             "deterministic_execution": True,
             "autocast_cuda_float16": True,
+            "segmentation_export_logit_dtype": "torch.float16",
         },
         "protocol_locks": {
             "neural_case_head": {
@@ -896,6 +933,7 @@ def test_complete_final_candidate_lock_accepts_real_train_only_chain(
         "run_ledger_files": {
             "official_validation": "official_validation_run_consumed.json",
             "selected_test": "selected_test_run_consumed.json",
+            "stock_speed": "stock_speed_run_consumed.json",
         },
     }
     lock_path = tmp_path / "valid-final-candidate-lock.json"

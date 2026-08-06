@@ -338,6 +338,68 @@ def test_candidate_bootstrap_dispatches_repository_main_with_exact_argv(
     assert audit["installed_sources_unchanged"] is True
 
 
+def test_candidate_bootstrap_never_initializes_cuda_before_nested_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bootstrap = _load_bootstrap_module()
+    observations = {"target_started": False, "availability_calls": 0}
+
+    def candidate_main() -> int:
+        observations["target_started"] = True
+        nested = determinism.configure_deterministic_inference(torch.device("cuda"))
+        assert nested == EXPECTED_SNAPSHOT
+        return 0
+
+    fake_module, _ = _fake_target_module(
+        tmp_path, bootstrap.CANDIDATE_MODULE, candidate_main
+    )
+    monkeypatch.setattr(bootstrap, "_candidate_module", lambda: fake_module)
+    monkeypatch.setattr(torch.cuda, "is_initialized", lambda: False)
+
+    def is_available() -> bool:
+        observations["availability_calls"] += 1
+        return True
+
+    monkeypatch.setattr(torch.cuda, "is_available", is_available)
+
+    def synchronize(_device) -> None:
+        assert observations["target_started"] is True
+
+    monkeypatch.setattr(torch.cuda, "synchronize", synchronize)
+    monkeypatch.setattr(
+        torch.cuda,
+        "reset_peak_memory_stats",
+        lambda _device: pytest.fail("candidate bootstrap cannot reset before target"),
+    )
+    monkeypatch.setattr(torch.cuda, "memory_allocated", lambda _device: 10 * 1024**2)
+    monkeypatch.setattr(torch.cuda, "memory_reserved", lambda _device: 20 * 1024**2)
+    monkeypatch.setattr(torch.cuda, "max_memory_allocated", lambda _device: 100 * 1024**2)
+    monkeypatch.setattr(torch.cuda, "max_memory_reserved", lambda _device: 120 * 1024**2)
+    audit_path = tmp_path / "candidate-cuda-audit.json"
+
+    assert (
+        bootstrap.dispatch_deterministic_inference(
+            "candidate", ["--device", "cuda"], audit_path
+        )
+        == 0
+    )
+
+    assert observations["availability_calls"] == 2
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    assert audit["cuda_memory"] == {
+        "unit": "MiB",
+        "collector": "torch.cuda process-local memory counters",
+        "bootstrap_reset_before_target": False,
+        "before_target": None,
+        "after_target": {
+            "allocated_mib": 10.0,
+            "reserved_mib": 20.0,
+            "peak_allocated_mib": 100.0,
+            "peak_reserved_mib": 120.0,
+        },
+    }
+
+
 def test_bootstrap_writes_fail_closed_audit_when_target_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

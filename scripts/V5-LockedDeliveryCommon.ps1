@@ -43,10 +43,17 @@ $script:V5ClassifierPipeline = "assignment_conforming_v5_neural_case_head"
 $script:V5BaselineMacroF1 = 0.46399340516987575
 
 $script:V5MandatoryImplementationFiles = @(
+    "scripts/Set-QuizEnvironment.ps1",
     "scripts/predict_joint.py",
     "scripts/evaluate_predictions.py",
     "scripts/Package-Submission.ps1",
     "scripts/validate_submission.py",
+    "scripts/run_deterministic_inference.py",
+    "scripts/benchmark_inference_speed.py",
+    "scripts/Run-InferenceSpeedBenchmark.ps1",
+    "scripts/run_timed_inference_child.py",
+    "scripts/benchmark_stock_inference_speed.py",
+    "scripts/Run-StockInferenceSpeedBenchmark.ps1",
     "scripts/V5-LockedDeliveryCommon.ps1",
     "scripts/Run-V5LockedFinalEvaluation.ps1",
     "scripts/Run-V5LockedSelectedTestAndPackage.ps1",
@@ -394,7 +401,7 @@ function Get-V5BareLedgerPath {
         [Parameter(Mandatory)]
         [object] $Lock,
         [Parameter(Mandatory)]
-        [ValidateSet("official_validation", "selected_test")]
+        [ValidateSet("official_validation", "selected_test", "stock_speed")]
         [string] $Stage,
         [Parameter(Mandatory)]
         [string] $FinalCandidateLock
@@ -730,6 +737,43 @@ function Assert-V5FinalCandidateLock {
         $false `
         "V5 test-tuning-signal disclosure"
 
+    $stockDeviations = Get-V5RequiredProperty `
+        $lock `
+        "stock_speed_protocol_deviations" `
+        "Final-candidate lock"
+    Assert-V5Boolean `
+        (Get-V5RequiredProperty $stockDeviations "post_stock_lock_train_only_conformance_artifacts_contained_timing_fields" "Stock-speed protocol deviations") `
+        $true `
+        "Retained diagnostic timing-field disclosure"
+    Assert-V5Boolean `
+        (Get-V5RequiredProperty $stockDeviations "diagnostic_conformance_timings_eligible_for_final_speed_arithmetic" "Stock-speed protocol deviations") `
+        $false `
+        "Diagnostic timing ineligibility disclosure"
+    Assert-V5Boolean `
+        (Get-V5RequiredProperty $stockDeviations "candidate_implementation_changed_after_original_stock_lock" "Stock-speed protocol deviations") `
+        $true `
+        "Post-stock-lock implementation-change disclosure"
+    Assert-V5Boolean `
+        (Get-V5RequiredProperty $stockDeviations "original_stock_lock_literal_compliance_was_perfect" "Stock-speed protocol deviations") `
+        $false `
+        "Literal stock-lock compliance disclosure"
+    Assert-V5Boolean `
+        (Get-V5RequiredProperty $stockDeviations "repairs_were_limited_to_determinism_and_stock_export_conformance" "Stock-speed protocol deviations") `
+        $true `
+        "Bounded conformance-repair disclosure"
+    Assert-V5Boolean `
+        (Get-V5RequiredProperty $stockDeviations "each_repair_was_locked_before_its_implementation_edit" "Stock-speed protocol deviations") `
+        $true `
+        "Prospective repair-lock disclosure"
+    Assert-V5Boolean `
+        (Get-V5RequiredProperty $stockDeviations "official_validation_or_test_data_used_for_repairs" "Stock-speed protocol deviations") `
+        $false `
+        "Repair data-boundary disclosure"
+    Assert-V5Boolean `
+        (Get-V5RequiredProperty $stockDeviations "model_weights_features_head_or_offsets_changed_by_repairs" "Stock-speed protocol deviations") `
+        $false `
+        "Repair model-state disclosure"
+
     $artifacts = Get-V5RequiredProperty $lock "artifacts" "Final-candidate lock"
     $checkpoint = Get-V5RequiredProperty $artifacts "checkpoint" "Final-candidate artifacts"
     Assert-V5ExactValue `
@@ -797,6 +841,10 @@ function Assert-V5FinalCandidateLock {
     Assert-V5Boolean (Get-V5RequiredProperty $inference "results_on_cpu" "Inference contract") $false "V5 result-accumulation contract"
     Assert-V5Boolean (Get-V5RequiredProperty $inference "deterministic_execution" "Inference contract") $true "V5 deterministic-execution contract"
     Assert-V5Boolean (Get-V5RequiredProperty $inference "autocast_cuda_float16" "Inference contract") $true "V5 CUDA autocast contract"
+    Assert-V5ExactValue `
+        (Get-V5RequiredProperty $inference "segmentation_export_logit_dtype" "Inference contract") `
+        "torch.float16" `
+        "V5 segmentation-export dtype contract"
 
     $officialLedgerPath = Get-V5BareLedgerPath `
         -Lock $lock `
@@ -806,10 +854,19 @@ function Assert-V5FinalCandidateLock {
         -Lock $lock `
         -Stage selected_test `
         -FinalCandidateLock $resolvedLock
-    if ($officialLedgerPath.Equals($selectedTestLedgerPath, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Official-validation and selected-test one-use ledgers must be different files."
+    $stockSpeedLedgerPath = Get-V5BareLedgerPath `
+        -Lock $lock `
+        -Stage stock_speed `
+        -FinalCandidateLock $resolvedLock
+    $runLedgerPaths = @(
+        $officialLedgerPath,
+        $selectedTestLedgerPath,
+        $stockSpeedLedgerPath
+    )
+    if (@($runLedgerPaths | Sort-Object -Unique).Count -ne $runLedgerPaths.Count) {
+        throw "Official-validation, selected-test, and stock-speed one-use ledgers must be different files."
     }
-    foreach ($runLedgerPath in @($officialLedgerPath, $selectedTestLedgerPath)) {
+    foreach ($runLedgerPath in $runLedgerPaths) {
         if ($runLedgerPath.Equals($resolvedLock, [StringComparison]::OrdinalIgnoreCase)) {
             throw "A one-use run ledger cannot replace the final-candidate lock."
         }
