@@ -155,6 +155,25 @@ observation. `configs/experiment.yaml` and
 fixed `checkpoint_final.pth` source, one 30 x 125 AdamW attempt, frozen
 encoder/decoder, and no validation batches, stopping, or schedule changes.
 
+Epoch 40 completed at 2026-08-05 20:59:46 EDT, after the rescue protocol and
+fail-closed evaluation integration had been pushed publicly in commits
+`859a70e` and `907235a`. Before any restored full-volume validation inference,
+the predeclared training-only window for epochs 31--40 had mean classification
+CE `1.11514384`, mean training-patch accuracy `0.3236`, and CE ordinary-least-
+squares slope `-0.000249559` per epoch. These respectively pass the frozen
+`>=1.05`, `<=0.42`, and `>=-0.001` conditions, so the epoch-40 gate is
+affirmative. This snapshot was recomputed from the 41-entry logger in
+`checkpoint_best.pth` at `current_epoch=41`; the rescue remains prohibited
+until the joint run completes 200 epochs and the same decision is recomputed
+from `checkpoint_final.pth` into a SHA-256-bound activation audit. No
+full-volume validation output existed at this decision point.
+
+The primary W&B run remains the sole training run: it already logs joint
+training/validation losses and patch-level performance for both tasks. Rescue
+history will stay in its immutable audit JSON rather than being appended as
+epochs 200--229, because the optimizer, trainable parameter scope, and metric
+semantics differ and the rescue deliberately consumes zero validation batches.
+
 ## 2026-08-06 — Fixed validation
 
 Status: **PENDING training completion**
