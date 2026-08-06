@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_any_v6_h100_feature_extraction_or_training",
+  "parent_head_lock_sha256": "260dd55f9d3bd49e4d60cf472eaa6f7716e0119ba68bb4d56ba664bb2abf621a",
+  "parent_clarifications_sha256": "33dbd3fae0ec83340184c03b68441e0d46fe1c234119569e64807929eb9ae848",
+  "adaptive_inference_lock_sha256": "0aac2af8ea77128c2e7f4583cceccea0ec9e1bde939bb0cb072517e7b2f93f83",
+  "data": {
+    "scope": "252_supplied_training_cases_only",
+    "class_counts": [62, 106, 84],
+    "case_id_digest": "bc9eee511612fce42d700b256d26793e6d2c8aabe06f4bf8699bb2b1abbf17bb",
+    "payload_manifest_sha256_with_training_masks": "ec22997515eea6db1de655e06b788aa697ebf98413a49b70c53e5599172101b3",
+    "validation_or_test_files_permitted": false,
+    "ground_truth_masks_used_by_v6_head_extractor": false
+  },
+  "extractor_clarifications": {
+    "mirror_accumulation": "float32_arithmetic_mean_over_exactly_8_views",
+    "stage_indices": {"stage2_128": 2, "stage3_256": 3, "stage5_320": 5},
+    "spatial_grid": [8, 8, 12],
+    "spatial_orientation": "each_mirrored_feature_map_is_flipped_back_before_pooling_and_accumulation",
+    "segmentation_probabilities": "softmax_float32_per_view_then_arithmetic_mean",
+    "whole_probability": "class1_plus_class2",
+    "ct_grid": "adaptive_average_pool_of_zero_padded_unmirrored_preprocessed_ct",
+    "case_lesion_mass": "arithmetic_mean_of_the_final_8x8x12_lesion_probability_grid",
+    "stage5_lesion_summary": "per_view_lesion_probability_weighted_mean_then_arithmetic_mean",
+    "stage5_weight_floor": 0.000001,
+    "morphology": "46_existing_features_from_unpadded_preprocessed_ct_and_argmax_of_cropped_mirror_mean_logits",
+    "cache_numeric_dtype": "float16",
+    "training_numeric_dtype": "float32",
+    "float16_probability_load": "cast_to_float32_then_row_renormalize_by_positive_row_sum"
+  },
+  "canonical_row_order": {
+    "rule": "ascending_sha256_of_raw_training_ct_bytes",
+    "case_identifiers_used": false,
+    "class_labels_used": false,
+    "collision_policy": "fail"
+  },
+  "seed_formulas": {
+    "candidate_index": {"v6_spatial_residual": 0, "v6_spatial_morph_residual": 1},
+    "inner_model_seed": "repeat_seed+100000*(fold_index+1)+1000*(candidate_index+1)+11",
+    "inner_sampler_seed_base": "inner_model_seed+10000000",
+    "outer_model_seed": "repeat_seed+200000*(fold_index+1)+1000*(candidate_index+1)+29",
+    "outer_sampler_seed_base": "outer_model_seed+20000000",
+    "final_model_seeds": [20260806, 20260807, 20260808],
+    "final_sampler_seed_base": "final_model_seed+30000000"
+  },
+  "execution": {
+    "device": "cuda",
+    "feature_extraction_autocast": "cuda_float16",
+    "case_head_training_precision": "float32",
+    "wandb_required": false,
+    "resume": "case_cache_only",
+    "validation_or_test_evaluation": "performed_separately_after_train_only_gate"
+  }
+}

@@ -1,0 +1,11 @@
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+torch==2.8.0+cu128
+torchvision==0.23.0+cu128
+nnunetv2==2.8.1
+dynamic-network-architectures==0.4.4
+nibabel==5.4.2
+SimpleITK==2.5.6
+scipy==1.18.0
+scikit-learn==1.9.0
+pytest==9.1.1
