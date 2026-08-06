@@ -24,11 +24,16 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $predictorScript = Join-Path $PSScriptRoot 'predict_joint.py'
 $auditScript = Join-Path $PSScriptRoot 'benchmark_inference_speed.py'
 $lockArtifact = Join-Path $repositoryRoot 'configs\inference_speed_benchmark.json'
+$env:nnUNet_extTrainer = Join-Path $repositoryRoot 'src'
+$env:nnUNet_compile = 'false'
 
 foreach ($requiredFile in @($Python, $predictorScript, $auditScript, $lockArtifact)) {
     if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
         throw "Required file does not exist: $requiredFile"
     }
+}
+if (-not (Test-Path -LiteralPath $env:nnUNet_extTrainer -PathType Container)) {
+    throw "Custom trainer search path does not exist: $env:nnUNet_extTrainer"
 }
 $resolvedInput = (Resolve-Path -LiteralPath $InputDirectory).Path
 $resolvedModel = (Resolve-Path -LiteralPath $ModelDirectory).Path

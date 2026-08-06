@@ -20,6 +20,8 @@ def test_wrapper_locks_abba_fresh_process_arms_and_fixed_inference_settings() ->
     assert "--disable-tta" not in SOURCE
     assert "--disable-gaussian" not in SOURCE
     assert "& $Python @predictionArguments" in SOURCE
+    assert "$env:nnUNet_extTrainer = Join-Path $repositoryRoot 'src'" in SOURCE
+    assert "$env:nnUNet_compile = 'false'" in SOURCE
 
 
 def test_wrapper_guards_checkpoint_and_never_removes_or_reuses_work_root() -> None:
