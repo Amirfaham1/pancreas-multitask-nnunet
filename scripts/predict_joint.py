@@ -20,7 +20,37 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from pancreas_multitask.neural_case_predictor import (
+    LOCKED_BATCH_CONFIGURATIONS,
+    NeuralCaseNNUNetPredictor,
+    V5_CLASSIFIER_PIPELINE,
+)
+from pancreas_multitask.neural_case_head import (
+    CHECKPOINT_SHA256,
+    DATASET_JSON_SHA256,
+    PLANS_SHA256,
+)
 from pancreas_multitask.predictor import JointNNUNetPredictor
+
+RESCUE_CLASSIFIER_PIPELINE = "baseline_rescue_tile_probability_mean"
+V5_CHECKPOINT_NAME = "checkpoint_classification_rescue.pth"
+V5_MODEL_CONFIGURATION_FILENAMES = ("dataset.json", "plans.json")
+V5_MODEL_CONFIGURATION_SHA256 = {
+    "dataset.json": DATASET_JSON_SHA256,
+    "plans.json": PLANS_SHA256,
+}
+V5_IMPLEMENTATION_RELATIVE_PATHS = (
+    "scripts/predict_joint.py",
+    "src/pancreas_multitask/classification_rescue.py",
+    "src/pancreas_multitask/network.py",
+    "src/pancreas_multitask/predictor.py",
+    "src/pancreas_multitask/case_features.py",
+    "src/pancreas_multitask/case_feature_extractor.py",
+    "src/pancreas_multitask/neural_case_head.py",
+    "src/pancreas_multitask/neural_case_bundle.py",
+    "src/pancreas_multitask/neural_case_training.py",
+    "src/pancreas_multitask/neural_case_predictor.py",
+)
 
 
 def _fold(value: str) -> int | str:
@@ -113,9 +143,110 @@ def _checkpoint_provenance(
     return provenance
 
 
+def _v5_model_configuration_provenance(
+    model_directory: Path,
+) -> list[dict[str, object]]:
+    """Bind preprocessing to the exact nnU-Net dataset and plans artifacts."""
+
+    provenance: list[dict[str, object]] = []
+    for filename in V5_MODEL_CONFIGURATION_FILENAMES:
+        path = model_directory / filename
+        if not path.is_file():
+            raise FileNotFoundError(f"V5 model configuration does not exist: {path}")
+        digest = _sha256(path)
+        if digest != V5_MODEL_CONFIGURATION_SHA256[filename]:
+            raise ValueError(f"V5 {filename} differs from the locked final artifact")
+        provenance.append(
+            {
+                "name": filename,
+                "sha256": digest,
+                "size_bytes": path.stat().st_size,
+            }
+        )
+    return provenance
+
+
+def _input_file_manifest(input_directory: Path) -> dict[str, object]:
+    """Hash every raw NIfTI input outside the timed v3 inference region."""
+
+    directory = input_directory.expanduser().resolve()
+    if not directory.is_dir():
+        raise FileNotFoundError(f"Raw input directory does not exist: {directory}")
+    paths = sorted(
+        (path for path in directory.iterdir() if path.is_file() and path.name.endswith(".nii.gz")),
+        key=lambda path: path.name,
+    )
+    if not paths:
+        raise FileNotFoundError(f"Raw input directory contains no .nii.gz files: {directory}")
+    files = [
+        {
+            "name": path.name,
+            "sha256": _sha256(path),
+            "size_bytes": path.stat().st_size,
+        }
+        for path in paths
+    ]
+    canonical = json.dumps(files, sort_keys=True, separators=(",", ":"))
+    return {
+        "file_count": len(files),
+        "files": files,
+        "manifest_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+    }
+
+
 def _case_ids_sha256(case_ids: list[str]) -> str:
     canonical = "".join(f"{case_id}\n" for case_id in sorted(case_ids))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _sha256_argument(value: str) -> str:
+    normalized = value.strip().lower()
+    if len(normalized) != 64 or any(
+        character not in "0123456789abcdef" for character in normalized
+    ):
+        raise argparse.ArgumentTypeError("value must be one lowercase SHA-256 digest")
+    return normalized
+
+
+def _validate_v5_arguments(
+    args: argparse.Namespace,
+    selected_folds: tuple[int | str, ...] | None,
+) -> None:
+    bundle_values = (
+        args.neural_case_head_bundle,
+        args.expected_neural_case_head_bundle_sha256,
+        args.expected_numeric_train_dataset_sha256,
+    )
+    if args.classification_mode != "neural-v5":
+        if any(value is not None for value in bundle_values) or (
+            args.v5_extraction_mode is not None
+        ):
+            raise ValueError(
+                "Neural bundle arguments require --classification-mode neural-v5"
+            )
+        return
+    if any(value is None for value in bundle_values):
+        raise ValueError(
+            "V5 inference requires bundle path, expected bundle SHA-256, and "
+            "numeric training-dataset SHA-256"
+        )
+    if args.v5_extraction_mode is None:
+        raise ValueError("V5 inference requires an explicit --v5-extraction-mode")
+    if (
+        selected_folds is None
+        or selected_folds != (0,)
+    ):
+        raise ValueError("V5 inference requires exactly the explicit numeric fold 0")
+    if args.checkpoint != V5_CHECKPOINT_NAME:
+        raise ValueError(f"V5 inference requires --checkpoint {V5_CHECKPOINT_NAME}")
+    if float(args.tile_step_size) != 0.5:
+        raise ValueError("V5 inference requires --tile-step-size 0.5")
+    if (args.tile_batch_size, args.tta_batch_size) not in LOCKED_BATCH_CONFIGURATIONS:
+        raise ValueError("V5 inference permits only the locked tile1/TTA1 schedule")
+    if args.disable_tta or args.disable_gaussian:
+        raise ValueError("V5 inference requires mirror TTA and Gaussian weighting")
+    if not args.overwrite:
+        raise ValueError("V5 inference requires --overwrite so every case executes the head")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -151,6 +282,35 @@ def build_parser() -> argparse.ArgumentParser:
         "--checkpoint",
         default="checkpoint_best_multitask.pth",
         help="Checkpoint filename within each fold directory",
+    )
+    parser.add_argument(
+        "--classification-mode",
+        choices=("rescue", "neural-v5"),
+        default="rescue",
+        help="Case classifier path (default: rescue; final pipeline: neural-v5)",
+    )
+    parser.add_argument(
+        "--neural-case-head-bundle",
+        type=Path,
+        help="Final locked v5 neural case-head .pth bundle",
+    )
+    parser.add_argument(
+        "--v5-extraction-mode",
+        choices=("full", "neural_only"),
+        help=(
+            "V5 feature path: full locked reference or dependency-pruned "
+            "neural_only candidate"
+        ),
+    )
+    parser.add_argument(
+        "--expected-neural-case-head-bundle-sha256",
+        type=_sha256_argument,
+        help="Required exact SHA-256 for the final v5 bundle",
+    )
+    parser.add_argument(
+        "--expected-numeric-train-dataset-sha256",
+        type=_sha256_argument,
+        help="Required numeric-content hash of the 252-case training feature dataset",
     )
     parser.add_argument(
         "--classification-csv",
@@ -235,6 +395,7 @@ def run(args: argparse.Namespace) -> int:
     if args.tta_batch_size < 1:
         raise ValueError("--tta-batch-size must be at least 1")
     selected_folds = _selected_folds(args.folds)
+    _validate_v5_arguments(args, selected_folds)
     device = torch.device(args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("--device cuda was requested, but CUDA is unavailable")
@@ -257,7 +418,40 @@ def run(args: argparse.Namespace) -> int:
         selected_folds,
         args.checkpoint,
     )
-    predictor = JointNNUNetPredictor(
+    if args.classification_mode == "neural-v5" and (
+        len(checkpoint_provenance) != 1
+        or checkpoint_provenance[0]["fold"] != "0"
+        or checkpoint_provenance[0]["sha256"] != CHECKPOINT_SHA256
+    ):
+        raise ValueError("V5 checkpoint differs from the locked fold-0 final artifact")
+    model_configuration_provenance = (
+        _v5_model_configuration_provenance(model_directory)
+        if args.classification_mode == "neural-v5"
+        else None
+    )
+    input_file_manifest = (
+        _input_file_manifest(args.input)
+        if args.classification_mode == "neural-v5"
+        else None
+    )
+    predictor_type = (
+        NeuralCaseNNUNetPredictor
+        if args.classification_mode == "neural-v5"
+        else JointNNUNetPredictor
+    )
+    predictor_arguments: dict[str, object] = {}
+    if args.classification_mode == "neural-v5":
+        predictor_arguments = {
+            "neural_case_head_bundle": args.neural_case_head_bundle,
+            "expected_neural_case_head_bundle_sha256": (
+                args.expected_neural_case_head_bundle_sha256
+            ),
+            "expected_numeric_train_dataset_sha256": (
+                args.expected_numeric_train_dataset_sha256
+            ),
+            "v5_extraction_mode": args.v5_extraction_mode,
+        }
+    predictor = predictor_type(
         tile_step_size=args.tile_step_size,
         tile_batch_size=args.tile_batch_size,
         tta_batch_size=args.tta_batch_size,
@@ -268,6 +462,7 @@ def run(args: argparse.Namespace) -> int:
         verbose=args.verbose,
         verbose_preprocessing=args.verbose,
         allow_tqdm=True,
+        **predictor_arguments,
     )
 
     if device.type == "cuda":
@@ -280,6 +475,8 @@ def run(args: argparse.Namespace) -> int:
         use_folds=selected_folds,
         checkpoint_name=args.checkpoint,
     )
+    if isinstance(predictor, NeuralCaseNNUNetPredictor):
+        predictor.load_final_neural_case_head()
     predictor.reset_inference_runtime_counters()
     results = predictor.predict_from_files_joint(
         args.input,
@@ -292,6 +489,23 @@ def run(args: argparse.Namespace) -> int:
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     total_seconds = time.perf_counter() - started_at
+
+    if isinstance(predictor, NeuralCaseNNUNetPredictor):
+        checkpoint_provenance_after = _checkpoint_provenance(
+            model_directory,
+            selected_folds,
+            args.checkpoint,
+        )
+        if checkpoint_provenance_after != checkpoint_provenance:
+            raise RuntimeError("V5 checkpoint changed during inference")
+        model_configuration_after = _v5_model_configuration_provenance(
+            model_directory
+        )
+        if model_configuration_after != model_configuration_provenance:
+            raise RuntimeError("V5 model configuration changed during inference")
+        input_file_manifest_after = _input_file_manifest(args.input)
+        if input_file_manifest_after != input_file_manifest:
+            raise RuntimeError("Raw input files changed during v5 inference")
 
     case_count = len(results)
     case_ids = sorted(str(result.case_id) for result in results)
@@ -313,12 +527,19 @@ def run(args: argparse.Namespace) -> int:
         device_name = platform.processor() or platform.machine()
         device_capability = None
 
+    inference_execution = predictor.inference_runtime_provenance()
+    classifier_pipeline = (
+        V5_CLASSIFIER_PIPELINE
+        if isinstance(predictor, NeuralCaseNNUNetPredictor)
+        else RESCUE_CLASSIFIER_PIPELINE
+    )
     runtime = {
         "case_count": case_count,
         "case_ids": case_ids,
         "case_ids_sha256": _case_ids_sha256(case_ids),
         "checkpoint": args.checkpoint,
         "checkpoint_files": checkpoint_provenance,
+        "classifier_pipeline": classifier_pipeline,
         "cuda_runtime_version": torch.version.cuda,
         "cudnn_version": torch.backends.cudnn.version(),
         "device": str(device),
@@ -326,8 +547,10 @@ def run(args: argparse.Namespace) -> int:
         "device_name": device_name,
         "folds": list(selected_folds) if selected_folds is not None else "auto",
         "gaussian_enabled": not args.disable_gaussian,
-        "inference_execution": predictor.inference_runtime_provenance(),
+        "inference_execution": inference_execution,
         "mean_seconds_per_case": mean_seconds_per_case,
+        "input_directory": str(args.input.expanduser().resolve()),
+        "model_directory": str(model_directory),
         "overwrite": bool(args.overwrite),
         "peak_allocated_mib": peak_allocated_mib,
         "peak_reserved_mib": peak_reserved_mib,
@@ -335,12 +558,47 @@ def run(args: argparse.Namespace) -> int:
         "python_version": platform.python_version(),
         "started_at_utc": started_at_utc,
         "tile_step_size": args.tile_step_size,
-        "timing_scope": "fresh_process_model_initialization_preprocessing_inference_export",
+        "timing_scope": (
+            "fresh_process_model_and_v5_head_initialization_preprocessing_"
+            "feature_extraction_neural_head_offsets_export"
+            if isinstance(predictor, NeuralCaseNNUNetPredictor)
+            else "fresh_process_model_initialization_preprocessing_inference_export"
+        ),
         "total_seconds": total_seconds,
         "torch_version": torch.__version__,
         "tta_enabled": not args.disable_tta,
         "warmup_policy": "none_fresh_process_end_to_end",
     }
+    if isinstance(predictor, NeuralCaseNNUNetPredictor):
+        if (
+            inference_execution["v5_case_extractions_completed"] != case_count
+            or inference_execution["v5_neural_head_forward_calls"] != case_count
+            or inference_execution["v5_class_offset_applications"] != case_count
+            or inference_execution["v5_feature_cache_reads"] != 0
+        ):
+            raise RuntimeError("Not every output case executed the complete fresh v5 path")
+        runtime.update(
+            {
+                "neural_case_head_bundle": predictor.neural_case_head_provenance(),
+                "frozen_network": predictor.frozen_network_provenance(),
+                "model_configuration_files": model_configuration_provenance,
+                "model_configuration_unchanged_during_run": True,
+                "checkpoint_unchanged_during_run": True,
+                "input_file_manifest": input_file_manifest,
+                "input_files_unchanged_during_run": True,
+                "feature_cache_policy": "disabled_online_fresh_extraction",
+                "v5_extraction_mode": args.v5_extraction_mode,
+                "v5_neural_bag_sha256_sequence": inference_execution[
+                    "v5_neural_bag_sha256_sequence"
+                ],
+                "class_probabilities": "v5_offset_adjusted_three_class",
+                "case_identifiers_or_paths_used_as_model_inputs": False,
+                "v5_implementation_files": {
+                    relative_path: _sha256(ROOT / relative_path)
+                    for relative_path in V5_IMPLEMENTATION_RELATIVE_PATHS
+                },
+            }
+        )
     if args.runtime_json is not None:
         _write_json_atomic(args.runtime_json, runtime)
 
