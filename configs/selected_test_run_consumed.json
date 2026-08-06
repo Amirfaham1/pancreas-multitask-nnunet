@@ -1,0 +1,22 @@
+{
+    "schema_version":  1,
+    "status":  "complete_and_consumed",
+    "stage":  "single_locked_selected_test_and_package",
+    "started_at_utc":  "2026-08-06T18:02:29.9547227Z",
+    "completed_at_utc":  "2026-08-06T18:07:24.1663158Z",
+    "final_candidate_lock":  {
+                                 "path":  "C:\\Users\\amirf\\OneDrive\\Desktop\\ML-Quiz-3DMedImg\\configs\\phd_final_candidate_lock_v5.json",
+                                 "sha256":  "8f508615ee0e6a0296506dbbc06f66e31dd46842cd585ef67f7c133c74c037db"
+                             },
+    "official_evaluation_gate":  {
+                                     "path":  "D:\\MLQuizWork\\phd_upgrade_v5\\official_validation_locked_v5\\evidence\\official_evaluation_gates.json",
+                                     "sha256":  "6efb7d9cfb745ecffc06cd5c981ab360b980dfb5d2a49b18537d1aab236c3df7"
+                                 },
+    "official_validation_ledger_sha256":  "d0ce74b92bd27e1727e8810b77e9b1baed3d996167bd5a18f3db6f2059204d9d",
+    "output_root":  "D:\\MLQuizWork\\phd_upgrade_v5\\selected_test_locked_v5",
+    "selected_test_inference_invocation_count":  1,
+    "pre_package_prediction_manifest_sha256":  "3f2571497d299cbb2d7532af6a4ed5c8ce7301f9fc859737fd0eba1b38d511dd",
+    "package_invocation_count":  1,
+    "completion_manifest_sha256":  "77a931a8104671f7a3906c23de2091167354620d4951e4bd6c7d1c043ea70d94",
+    "archive_sha256":  "34afe1d74b70a24facceee890c03919bc5dbe036383206079fe221aa34ddd444"
+}
