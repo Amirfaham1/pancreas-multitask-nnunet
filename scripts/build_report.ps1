@@ -11,10 +11,11 @@ Build the submission report with Pandoc and Tectonic using Springer LNCS.
   -TectonicPath D:\MLQuizWork\tools\tectonic-0.16.9\tectonic.exe `
   -Final
 
-The -Final switch rejects unresolved PENDING/DRAFT markers and requires at
-least eight content pages before the references. The report Markdown is never
-modified: a temporary Pandoc filter supports the LNCS abstract environment and
-starts References on a new page so the content-page check is unambiguous.
+The -Final switch rejects unresolved result tokens and PENDING/DRAFT/TODO/TBD/
+PLACEHOLDER markers, then requires at least eight content pages before the
+references. The report Markdown is never modified: a temporary Pandoc filter
+supports the LNCS abstract environment and starts References on a new page so
+the content-page check is unambiguous.
 #>
 
 [CmdletBinding()]
@@ -100,8 +101,26 @@ foreach ($requiredFile in @($InputPath, $templatePath)) {
 
 $source = [IO.File]::ReadAllText($InputPath)
 if ($Final) {
+    $unresolvedV5Tokens = @(
+        [regex]::Matches($source, "(?<![A-Za-z0-9_])V5_[A-Z0-9_]+(?![A-Za-z0-9_])") |
+            ForEach-Object { $_.Value } |
+            Sort-Object -Unique
+    )
+    if ($unresolvedV5Tokens.Count -gt 0) {
+        $preview = ($unresolvedV5Tokens | Select-Object -First 10) -join ", "
+        $suffix = if ($unresolvedV5Tokens.Count -gt 10) {
+            " (and $($unresolvedV5Tokens.Count - 10) more)"
+        }
+        else {
+            ""
+        }
+        throw "Final build refused: unresolved v5 result token(s): $preview$suffix."
+    }
     if ($source -match "(?m)\bPENDING(?:_[A-Z0-9_]+)?\b") {
         throw "Final build refused: report.md still contains a PENDING marker."
+    }
+    if ($source -match "(?m)\b(?:TODO|TBD|PLACEHOLDER)(?:_[A-Z0-9_]+)?\b") {
+        throw "Final build refused: report.md still contains an unresolved TODO/TBD/PLACEHOLDER marker."
     }
     if ($source -match "DRAFT[^\r\n]*NOT READY FOR SUBMISSION") {
         throw "Final build refused: report.md still contains the DRAFT warning."
