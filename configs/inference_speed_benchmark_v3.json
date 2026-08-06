@@ -1,0 +1,97 @@
+{
+  "schema_version": 3,
+  "lock_status": "frozen_before_dependency_pruned_neural_inference_implementation_or_timing",
+  "locked_at_utc": "2026-08-06T15:08:45.2084288Z",
+  "objective": "Measure a causal implementation optimization of the final v5 joint model without changing its model, inputs, TTA, sliding-window geometry, or outputs",
+  "supersedes_for_final_speed_acceptance": {
+    "path": "configs/inference_speed_benchmark.json",
+    "sha256": "d8bfa51b40de6676db76227442540a505bac2e5965cbe7f8c1fa1940669271dc",
+    "retained_roles": [
+      "training_feature_cache_provenance",
+      "transparent_negative_train_only_batching_experiment"
+    ]
+  },
+  "development_basis": {
+    "evidence_path": "D:/MLQuizWork/classification_speed_smoke_60c0aff_comparator.json",
+    "evidence_sha256": "4dd3e94f507995e5bf605300c316e20277a34b5a950787999d12c68fc8186357",
+    "scope": "two supplied training cases only",
+    "observation": "Batch-two scheduling halved network calls and passed numerical gates but was slower than batch one on both one-tile and two-tile diagnostic cases.",
+    "official_validation_or_test_inputs_or_targets_used": false,
+    "reason_for_new_candidate": "The full locked extractor computes thousands of multiscale statistics for superseded classical diagnostics. The final v5 neural heads consume only stage-3 spatial maps, lesion/whole prediction maps, lesion mass, rescue logits/probabilities, and stage-5 global means. Removing computations that provably cannot affect either eligible neural head is a model-preserving inference optimization rather than a metric shortcut."
+  },
+  "comparison": {
+    "reference": "fresh_process_final_v5_joint_predictor_using_full_locked_feature_extraction",
+    "candidate": "fresh_process_same_final_v5_joint_predictor_using_dependency_pruned_neural_only_feature_extraction",
+    "causal_difference": "candidate_omits_only_feature_statistics_and_classical_views_not_consumed_by_either_locked_v5_neural_head",
+    "batching_in_both_arms": {
+      "tile_batch_size": 1,
+      "tta_batch_size": 1,
+      "maximum_network_batch_size": 1
+    },
+    "contextual_stock_nnunet_reference": "optional_and_not_part_of_acceptance"
+  },
+  "required_neural_inputs_in_both_arms": [
+    "top_three_tiles_ranked_by_model_predicted_mean_lesion_probability",
+    "mirror_mean_stage3_256_by_4_by_4_by_6_maps",
+    "mirror_mean_lesion_and_whole_prediction_maps_on_the_4_by_4_by_6_grid",
+    "all_tile_mean_rescue_logits_and_probabilities",
+    "all_tile_mean_stage5_global_mean",
+    "predicted_lesion_mass_weighted_all_tile_stage5_global_mean"
+  ],
+  "candidate_may_not_compute_or_use": [
+    "ground_truth_masks",
+    "case_identifiers_or_paths_as_features",
+    "superseded_classical_candidate_predictions",
+    "unused_stage0_stage1_stage2_stage4_or_stage5_dispersion_and_weighted_statistics",
+    "predicted_mask_morphology_or_intensity_views"
+  ],
+  "fixed_contract": {
+    "checkpoint": "same_frozen_rescue_checkpoint_and_hash",
+    "neural_head_bundle": "same_final_selected_v5_head_state_and_class_offsets",
+    "device": "same_single_gpu",
+    "folds": [0],
+    "gaussian_enabled": true,
+    "input_cases": "all_72_held_out_test_inputs_discovered_in_identical_directory",
+    "overwrite": true,
+    "preprocessing": "identical",
+    "segmentation_export": "identical",
+    "tile_step_size": 0.5,
+    "tta_enabled": true,
+    "mirror_axes": [0, 1, 2]
+  },
+  "timing": {
+    "arm_order": [
+      "reference",
+      "candidate",
+      "candidate",
+      "reference"
+    ],
+    "fresh_process_per_run": true,
+    "repeats_per_arm": 2,
+    "statistic": "arithmetic_mean_of_end_to_end_seconds_per_case_across_two_runs",
+    "scope": "model_and_head_initialization_plus_preprocessing_plus_inference_plus_export",
+    "warmup": "none"
+  },
+  "numerical_equivalence": {
+    "geometry_must_match_exactly": true,
+    "dtype_must_match_exactly": true,
+    "hard_masks_must_match_exactly": true,
+    "subtype_decisions_must_match_exactly": true,
+    "maximum_absolute_offset_adjusted_class_probability_delta": 1e-6,
+    "required_neural_bag_arrays_must_match_exactly": true
+  },
+  "acceptance": {
+    "candidate_mean_must_be_at_most_reference_fraction": 0.9,
+    "minimum_runtime_reduction_percent": 10.0,
+    "oom_fallbacks_allowed": 0,
+    "all_numerical_equivalence_checks_must_pass": true
+  },
+  "finalization": {
+    "train_only_functional_and_timing_smokes_allowed_before_final_benchmark": true,
+    "official_validation_inputs_or_targets_allowed_for_speed_development": false,
+    "test_inputs_allowed_before_final_locked_benchmark": false,
+    "test_targets_or_submission_scores_allowed": false,
+    "further_speed_candidate_amendments_allowed": false,
+    "final_benchmark_runs": 1
+  }
+}
