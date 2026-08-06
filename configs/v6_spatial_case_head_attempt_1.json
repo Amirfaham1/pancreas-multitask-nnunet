@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_candidate_implementation_feature_extraction_or_training",
+  "frozen_at_utc": "2026-08-06T19:00:30.5511278Z",
+  "protocol": {
+    "path": "configs/v6_development_protocol.json",
+    "sha256": "fc442f18cb59efbe5d2ff021dccf7b3cde1b7becf7c6737a2754ce8a2cb441fe",
+    "git_commit_before_speed_lock": "c2f47fc6d746c897ab7ecca58dac7b7927c6f151"
+  },
+  "adaptive_inference_dependency": {
+    "path": "configs/v6_adaptive_whole_volume_attempt_1.json",
+    "sha256": "0aac2af8ea77128c2e7f4583cceccea0ec9e1bde939bb0cb072517e7b2f93f83",
+    "git_commit": "c24669f4b7a627f1e94f346e857b6fb348ba322f"
+  },
+  "candidate_family": "v6_coordinate_aware_multiscale_spatial_case_head",
+  "hypothesis": "V5 is limited by a frozen segmentation representation, coarse stage-3 pooling, missing coordinates, constant-within-tile attention priors, unstable clipping, and a high-capacity single-seed refit. A multiscale coordinate-aware residual head on matching adaptive whole-volume features, with nested train-only selection and a three-seed ensemble, should improve subtype generalization without validation fitting.",
+  "data_boundary": {
+    "training_cases": 252,
+    "class_counts": [62, 106, 84],
+    "validation_gradients_or_fitted_statistics": false,
+    "ground_truth_masks_as_classifier_features": false,
+    "case_identifiers_paths_or_order_as_features": false,
+    "external_data_or_pretrained_weights": false,
+    "shared_checkpoint_source": "weights_learned_only_from_supplied_training_cases"
+  },
+  "case_extraction": {
+    "mode": "v6_adaptive_whole_volume_v1",
+    "volumes_per_case": 1,
+    "mirror_views": 8,
+    "spatial_grid": [8, 8, 12],
+    "cache_dtype": "float16",
+    "training_dtype": "float32",
+    "spatial_channels": [
+      "adaptive_average_pooled_encoder_stage2_128",
+      "adaptive_average_pooled_encoder_stage3_256",
+      "model_predicted_lesion_probability_1",
+      "model_predicted_whole_pancreas_probability_1",
+      "preprocessed_ct_1"
+    ],
+    "spatial_channel_count": 387,
+    "stage5_summaries": [
+      "global_mean_320",
+      "model_predicted_lesion_probability_weighted_mean_320"
+    ],
+    "rescue_evidence": ["mirror_mean_logits_3", "mirror_mean_probabilities_3"],
+    "morphology_features": "existing_46_predicted_mask_and_normalized_ct_features",
+    "morphology_uses_predicted_masks_only": true,
+    "numeric_content_and_schema_hashes_required": true
+  },
+  "position_encoding": {
+    "coordinate_system": "normalized_cell_centers_in_stride_padded_preprocessed_volume",
+    "coordinate_dimension": 3,
+    "formula": "concat(2*g-1,sin(pi*g),cos(pi*g))",
+    "encoded_dimension": 9,
+    "network": ["linear_9_to_32", "gelu", "linear_32_to_64"]
+  },
+  "shared_spatial_frontend": [
+    "conv3d_387_to_96_kernel1_bias_false",
+    "groupnorm_12_groups",
+    "gelu",
+    "conv3d_96_to_64_kernel3_padding1_bias_false",
+    "groupnorm_8_groups",
+    "gelu",
+    "dropout3d_0.10",
+    "add_position_embedding"
+  ],
+  "cross_attention": {
+    "queries": ["lesion_query_64", "context_query_64"],
+    "implementation": "torch_multiheadattention_batch_first",
+    "embedding_dimension": 64,
+    "heads": 4,
+    "dropout": 0.0,
+    "query_residual_then_layernorm": true,
+    "lesion_query_prior": "0.75*log(clamp(local_lesion_probability,1e-4))+0.25*log(clamp(case_lesion_mass,1e-4))",
+    "context_query_prior": "0.25*log(clamp(local_whole_pancreas_probability,1e-4))",
+    "priors_vary_within_volume": true
+  },
+  "summary_branch": {
+    "shared_stage5_projection": ["layernorm_320", "linear_320_to_32", "gelu"],
+    "apply_separately_to": ["global_mean", "lesion_weighted_mean"],
+    "concatenate": "two_32_vectors_plus_rescue_logits_3_plus_rescue_probabilities_3",
+    "combined_dimension": 70,
+    "output": ["linear_70_to_32", "gelu"]
+  },
+  "eligible_candidates": [
+    {
+      "candidate_id": "v6_spatial_residual",
+      "morphology_branch": false,
+      "classifier_input_dimension": 160
+    },
+    {
+      "candidate_id": "v6_spatial_morph_residual",
+      "morphology_branch": [
+        "fold_fitted_median_iqr_scaler",
+        "iqr_floor_1e-6",
+        "clip_minus5_plus5",
+        "linear_46_to_32",
+        "gelu",
+        "dropout_0.20",
+        "linear_32_to_16",
+        "gelu"
+      ],
+      "classifier_input_dimension": 176
+    }
+  ],
+  "classifier": {
+    "layers": ["layernorm", "linear_input_to_64", "gelu", "dropout_0.30", "linear_64_to_3"],
+    "anchored_logits": "rescue_mean_logits+3*tanh(delta/3)",
+    "trainable_parameter_count_must_be_recomputed_and_audited": true
+  },
+  "training": {
+    "outer_split": "RepeatedStratifiedKFold_5",
+    "repeat_seeds": [20260806, 20260807, 20260808],
+    "inner_split": "deterministic_stratified_80_20_of_each_outer_training_fold",
+    "inner_seed_formula": "repeat_seed+1000*fold_index+77",
+    "maximum_inner_epochs": 120,
+    "batch_size_cases": 16,
+    "samples_per_epoch": 256,
+    "sampler": "class_balanced_with_replacement",
+    "loss": "unweighted_cross_entropy_label_smoothing_0.05_plus_0.01_mean_squared_bounded_correction",
+    "class_weighted_loss": false,
+    "focal_loss": false,
+    "smote": false,
+    "optimizer": "AdamW",
+    "learning_rate": 0.0001,
+    "weight_decay": 0.001,
+    "warmup_epochs": 5,
+    "scheduler_after_warmup": "cosine_to_zero",
+    "gradient_clip_norm": 5.0,
+    "precision": "float32",
+    "deterministic": true,
+    "augmentation": "model_dropout_only"
+  },
+  "nested_selection": {
+    "inner_epoch_primary": "higher_macro_f1",
+    "inner_epoch_tie_breakers": ["lower_nll", "earlier_epoch"],
+    "inner_candidate_primary": "higher_macro_f1",
+    "inner_candidate_tie_band": 0.01,
+    "inner_candidate_tie_breakers": ["v6_spatial_residual_without_morphology", "lower_nll"],
+    "outer_refit": "reinitialize_selected_candidate_and_train_on_complete_outer_training_fold_for_selected_epoch",
+    "outer_holdout_evaluations": 15,
+    "outer_case_prediction_coverage_exactly_once_per_repeat": true
+  },
+  "final_refit": {
+    "family": "candidate_selected_in_more_of_15_inner_decisions_tie_to_no_morphology",
+    "epoch": "round_half_up_median_selected_epoch_among_inner_decisions_for_final_family",
+    "seeds": [20260806, 20260807, 20260808],
+    "seed_selection": false,
+    "inference_rule": "arithmetic_mean_of_three_raw_final_logits_then_softmax",
+    "class_offsets": [0.0, 0.0, 0.0]
+  },
+  "train_only_screen": {
+    "mean_across_repeat_oof_macro_f1_minimum": 0.60,
+    "minimum_repeat_oof_macro_f1": 0.57,
+    "minimum_repeat_per_class_recall": 0.50,
+    "all_predictions_and_logits_finite": true,
+    "complete_fold_and_case_coverage": true,
+    "resubstitution_gap_reported": true,
+    "failure_means_no_validation_attempt": true
+  },
+  "validation_and_claims": {
+    "maximum_evaluation_consumption": "one_of_four_v6_validation_attempts",
+    "validation_fitted_offsets_thresholds_or_scalers": false,
+    "whole_pancreas_dice_minimum": 0.91,
+    "lesion_dice_minimum": 0.31,
+    "classification_macro_f1_minimum": 0.70,
+    "validation_is_adaptively_selected_not_independent": true,
+    "v5_remains_immutable": true
+  }
+}
