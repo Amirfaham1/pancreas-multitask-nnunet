@@ -22,8 +22,11 @@ from pancreas_multitask.v6_case_head import (
     STAGE5_CHANNELS,
 )
 
+# Re-frozen after the morphology float16 overflow fix. The pre-fix lock was
+# 455c4f957e248506c5c4f51e4714aad46f5b1e6cd88db78a74f092cc8c92ca0b, which
+# declared "cache_numeric_dtype": "float16" for every cached array.
 V6_H100_ORCHESTRATION_LOCK_SHA256: Final = (
-    "455c4f957e248506c5c4f51e4714aad46f5b1e6cd88db78a74f092cc8c92ca0b"
+    "f81448b7143850713b8a95b3a8b820dde5b7a58962fc25f54bbf1e69cb36454c"
 )
 V6_STAGE2_INDEX: Final = 2
 V6_STAGE3_INDEX: Final = 3
@@ -129,7 +132,18 @@ class V6ExtractedCase:
             raise ValueError("V6 rescue probabilities are not normalized")
 
     def cache_arrays(self) -> dict[str, np.ndarray]:
-        """Return the prospectively locked float16 cache representation."""
+        """Return the locked cache representation: float16, morphology float32.
+
+        Every array except ``morphology`` is bounded (probabilities, normalized
+        coordinates, pooled activations) and stores exactly in float16.
+        ``morphology`` carries two physical volumes in mm^3 --
+        ``predicted_whole_volume_mm3`` and ``predicted_lesion_volume_mm3`` --
+        whose natural magnitude for a pancreas (~3e4 to 1e5) exceeds the
+        float16 maximum of 65504. Casting them to float16 silently produced
+        ``+inf`` for 165 of the 252 training cases, which ``_load_cache`` then
+        rejected on its finiteness check. Morphology is therefore stored in
+        float32; it is only 46 values per case, so the size cost is negligible.
+        """
 
         return {
             "spatial": self.spatial.astype(np.float16),
@@ -143,7 +157,7 @@ class V6ExtractedCase:
             "rescue_mean_probabilities": self.rescue_mean_probabilities.astype(
                 np.float16
             ),
-            "morphology": self.morphology.astype(np.float16),
+            "morphology": self.morphology.astype(np.float32),
         }
 
     def numeric_hashes(self) -> dict[str, str]:

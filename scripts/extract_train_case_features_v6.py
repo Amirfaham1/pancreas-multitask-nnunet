@@ -52,6 +52,13 @@ CACHE_ARRAY_NAMES = (
     "rescue_mean_probabilities",
     "morphology",
 )
+# Every cached array is float16 except morphology, which holds physical volumes
+# in mm^3 that overflow float16's 65504 maximum and become +inf. See
+# V6CaseExtraction.cache_arrays for the full rationale.
+CACHE_ARRAY_DTYPES: dict[str, type[np.floating]] = {
+    name: np.float16 for name in CACHE_ARRAY_NAMES
+}
+CACHE_ARRAY_DTYPES["morphology"] = np.float32
 
 
 def _atomic_json(path: Path, payload: Any) -> None:
@@ -132,8 +139,11 @@ def _load_cache(
         target_shape = tuple(int(value) for value in payload["target_shape"].tolist())
         stored_hashes = json.loads(str(payload["numeric_hashes_json"].item()))
     for name, value in arrays.items():
-        if value.dtype != np.float16 or not np.isfinite(value).all():
-            raise ValueError(f"Invalid float16 cache array {name}: {path}")
+        if value.dtype != CACHE_ARRAY_DTYPES[name] or not np.isfinite(value).all():
+            raise ValueError(
+                f"Invalid {np.dtype(CACHE_ARRAY_DTYPES[name]).name} "
+                f"cache array {name}: {path}"
+            )
         if _array_sha256(value) != stored_hashes.get(name):
             raise ValueError(f"Cache numeric hash mismatch for {name}: {path}")
     return arrays, names, target_shape
@@ -346,7 +356,7 @@ def run(args: argparse.Namespace) -> Path:
         case_ids.append(str(row["case_id"]))
         source_hashes.append(str(row["image_sha256"]))
     combined = {
-        name: np.stack(values).astype(np.float16, copy=False)
+        name: np.stack(values).astype(CACHE_ARRAY_DTYPES[name], copy=False)
         for name, values in combined_rows.items()
     }
     combined["labels"] = np.asarray(labels, dtype=np.int64)

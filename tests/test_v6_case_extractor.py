@@ -75,4 +75,13 @@ def test_v6_extractor_runs_exactly_eight_views_and_emits_float16_cache() -> None
     assert extracted.predicted_segmentation.shape == (8, 9, 10)
     assert extracted.target_shape == (64, 128, 192)
     assert np.isclose(extracted.case_lesion_mass, 1 / 3, atol=1e-6)
-    assert all(value.dtype == np.float16 for value in extracted.cache_arrays().values())
+    extracted.morphology[0] = 114_318.0
+    cached = extracted.cache_arrays()
+    assert cached["morphology"].dtype == np.float32
+    assert cached["morphology"][0] == 114_318.0
+    assert all(
+        value.dtype == np.float16
+        for name, value in cached.items()
+        if name != "morphology"
+    )
+    assert all(np.isfinite(value).all() for value in cached.values())

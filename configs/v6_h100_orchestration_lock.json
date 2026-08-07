@@ -24,7 +24,7 @@
     "stage5_lesion_summary": "per_view_lesion_probability_weighted_mean_then_arithmetic_mean",
     "stage5_weight_floor": 0.000001,
     "morphology": "46_existing_features_from_unpadded_preprocessed_ct_and_argmax_of_cropped_mirror_mean_logits",
-    "cache_numeric_dtype": "float16",
+    "cache_numeric_dtype": "float16_except_morphology_float32",
     "training_numeric_dtype": "float32",
     "float16_probability_load": "cast_to_float32_then_row_renormalize_by_positive_row_sum"
   },
