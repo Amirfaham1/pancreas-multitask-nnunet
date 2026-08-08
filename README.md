@@ -381,6 +381,15 @@ gate artifact, keeps probability/runtime evidence outside the strict prediction
 directory, packages the result, and validates the ZIP against the supplied test
 folder.
 
+V7 produces a replacement private archive using the selected stage-1/view-6
+shrinkage-LDA classifier reported below. It contains 72 masks plus 72 subtype
+rows, has subtype counts `[15, 35, 22]`, and has SHA-256
+`80bd08578878a80fa43789259ad9e45f1b99979f1834428a5ad0bf8b7c13462e`.
+The tracked aggregate audit is
+[`selected_test_package.json`](docs/evidence/v7/selected_test_package.json).
+The archive itself remains outside Git because it contains derived
+medical-image masks.
+
 The lower-level guarded packager validates an already completed prediction
 directory, creates an explicit
 flat staged ZIP, validates the staged ZIP before committing it, validates the

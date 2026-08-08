@@ -931,6 +931,16 @@ The validator extracts the ZIP to a temporary directory and checks member-path s
 
 After v5 passed the strict replacement gate, the selected inference and packaging path completed once. The authoritative archive has SHA-256 \artifacthash{34afe1d74b70a24facceee890c03919bc5dbe036383206079fe221aa34ddd444}; both the prediction-directory and extracted-archive validators passed with 72 readable masks, 72 subtype rows, valid integer labels, matching geometry, and zero issues. The ZIP contains 73 flat-root files: the 72 masks and `subtype_results.csv`.
 
+V7 replaces the subtype decision path and produces a new final private archive
+from the selected stage-1/view-6 shrinkage-LDA classifier. That archive contains
+exactly 72 masks and 72 subtype rows in 73 flat-root members, has subtype counts
+`[15,35,22]`, passes the same geometry, label, membership, and CSV checks, and
+has SHA-256
+\artifacthash{80bd08578878a80fa43789259ad9e45f1b99979f1834428a5ad0bf8b7c13462e}.
+The working `runtime_profile.json` was deliberately excluded. Aggregate binding
+evidence is stored in `docs/evidence/v7/selected_test_package.json`; the archive
+itself remains private because it contains derived medical-image masks.
+
 The final report hash is written after PDF generation to the external submission
 manifest; embedding a PDF's own hash inside that PDF would be self-referential.
 
@@ -955,7 +965,7 @@ Independent recomputation gives whole-pancreas Dice 0.92015690, lesion Dice 0.61
 - **V7 speed decision:** not met. `docs/evidence/v7/inference_speed_audit.json` records the complete local negative comparison and why the recovered H100 result is ineligible.
 - **V7 W&B evidence:** offline run IDs `uzc4elyc`, `wrd1f1c8`, and `4wb71b3i`, with provenance labels and exact sync commands in `docs/evidence/v7/wandb_runs.json`.
 - **Public source:** [GitHub repository](https://github.com/Amirfaham1/pancreas-multitask-nnunet), final V7 branch prepared 2026-08-07.
-- **72 masks and subtype CSV:** locked selected inference and extracted-archive validator; authoritative v5 ZIP SHA-256 \artifacthash{34afe1d74b70a24facceee890c03919bc5dbe036383206079fe221aa34ddd444}, valid with 72 masks, 72 subtype rows, and zero issues; immutable baseline ZIP SHA-256 \artifacthash{5de55f4ccc1eea78ef8974d0f362039523404a1d6315d06d0ec41ec8f0d08391}.
+- **72 masks and subtype CSV:** selected V7 ZIP SHA-256 \artifacthash{80bd08578878a80fa43789259ad9e45f1b99979f1834428a5ad0bf8b7c13462e}, valid with 72 masks, 72 subtype rows, and zero issues; tracked aggregate audit `docs/evidence/v7/selected_test_package.json`.
 
 # References {.unnumbered}
 
