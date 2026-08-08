@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "decision": "speed_requirement_not_met",
+  "requirement": "candidate runtime reduction >= 10 percent versus stock with TTA retained and sliding-window step 0.5",
+  "complete_local_benchmark": {
+    "hardware": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "software": "PyTorch 2.8.0+cu128; nnU-Net v2.8.1",
+    "order": "SCCSCS",
+    "fresh_process_per_arm": true,
+    "test_cases": 72,
+    "candidate_includes_segmentation": true,
+    "candidate_includes_classification": true,
+    "candidate_writes_subtype_csv": true,
+    "segmentation_tta_enabled": true,
+    "sliding_window_step": 0.5,
+    "stock_seconds": [
+      231.375,
+      235.10999999998603,
+      238.64000000001397
+    ],
+    "candidate_seconds": [
+      279.969000000041,
+      281.295999999973,
+      280.90600000007544
+    ],
+    "stock_mean_seconds": 235.04166666666666,
+    "candidate_mean_seconds": 280.7236666666965,
+    "runtime_reduction_percent": -19.43570288957128,
+    "meets_10_percent_gate": false,
+    "cross_arm": {
+      "total_voxels": 141878022,
+      "disagreeing_voxels": 345,
+      "disagreement_fraction": 2.431666266111322e-06,
+      "geometry_matches": true,
+      "dtype_matches": true,
+      "whole_pancreas_agreement_dice_mean": 0.9999798894019369,
+      "lesion_agreement_dice_mean": 0.9999401680045553
+    },
+    "source": "artifacts/v7_speed_rebuild_20260807/speed_benchmark.json"
+  },
+  "optimized_candidate_profile": {
+    "status": "engineering_profile_only_not_a_gate_comparison",
+    "complete_test_cases": 72,
+    "total_inside_main_seconds": 208.08286939992104,
+    "classification_stages": [1],
+    "classification_view_indices": [6],
+    "classification_device": "cpu-async",
+    "half_weights": true,
+    "segmentation_tta_enabled": true,
+    "sliding_window_step": 0.5,
+    "source": "artifacts/v7_candidate_stage1_half_full/runtime_profile.json"
+  },
+  "recovered_h100_benchmark": {
+    "reported_stock_mean_seconds": 67.87706852560707,
+    "reported_candidate_mean_seconds": 60.29536045265073,
+    "reported_runtime_reduction_percent": 11.169763570588039,
+    "eligible": false,
+    "reason": "Recovered candidate command omitted seven of eight classification views and did not execute the fitted classifier or write the required subtype CSV, so the two arms did not perform equivalent complete work.",
+    "source": "recovered deliverable results/speed_benchmark.json"
+  }
+}
