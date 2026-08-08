@@ -500,13 +500,15 @@ records both locked neural candidates, all repeat/fold trajectories, refit
 markers, and train-only OOF summaries. Its OOF values are development evidence,
 not substitutes for the official 36-case metrics reported above.
 
-V7 also created three new W&B records with real run IDs: `uzc4elyc` for the
-recovered fine-tuning events, `wrd1f1c8` for independent validation, and
-`4wb71b3i` for the inference audit. They are currently offline because this
-machine has no W&B API credential. The first run is explicitly configured as a
-replay of saved events (`live_training_run=false`); it is not passed off as the
-original live session. [The tracked manifest](docs/evidence/v7/wandb_runs.json)
-contains the exact `wandb sync` command for each immutable local run directory.
+V7 also created and synchronized three new W&B records:
+[recovered fine-tuning events `uzc4elyc`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uzc4elyc),
+[independent validation `wrd1f1c8`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/wrd1f1c8), and
+[inference audit `4wb71b3i`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/4wb71b3i).
+All three were remotely verified in the `finished` state. The first run is
+explicitly configured as a replay of saved events (`live_training_run=false`);
+it is not passed off as the original live session. The
+[tracked manifest](docs/evidence/v7/wandb_runs.json) preserves local and remote
+provenance.
 
 ## AI workflow and attribution
 

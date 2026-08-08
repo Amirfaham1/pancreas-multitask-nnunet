@@ -57,7 +57,8 @@ Primary evidence: `docs/evidence/v7/inference_speed_audit.json`.
 
 ## W&B records
 
-The finalization created three genuine W&B offline runs:
+The finalization created three genuine W&B runs offline first and then
+synchronized and remotely verified them:
 
 | Run ID | Purpose | Provenance |
 |---|---|---|
@@ -65,8 +66,8 @@ The finalization created three genuine W&B offline runs:
 | `wrd1f1c8` | Independent validation | Newly recomputed metrics |
 | `4wb71b3i` | Speed/equivalence audit | Complete local negative result plus rejected H100 result |
 
-They await W&B authentication on this machine. Exact sync commands are in
-`docs/evidence/v7/wandb_runs.json`.
+All three are remotely verified in the `finished` state. URLs and the retained
+local sync provenance are in `docs/evidence/v7/wandb_runs.json`.
 
 ## Attribution
 

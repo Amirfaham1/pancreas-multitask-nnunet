@@ -29,7 +29,7 @@ keywords:
 
 **Public repository:** [github.com/Amirfaham1/pancreas-multitask-nnunet](https://github.com/Amirfaham1/pancreas-multitask-nnunet)
 
-**Weights & Biases:** [joint baseline `hrs05iyx`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx), [v5 train-only experiment `u03yz7ds`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/u03yz7ds), plus provenance-explicit V7 offline run IDs `uzc4elyc`, `wrd1f1c8`, and `4wb71b3i`
+**Weights & Biases:** [joint baseline `hrs05iyx`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx), [v5 train-only experiment `u03yz7ds`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/u03yz7ds), [V7 recovered-history replay `uzc4elyc`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uzc4elyc), [V7 independent validation `wrd1f1c8`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/wrd1f1c8), and [V7 inference audit `4wb71b3i`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/4wb71b3i)
 
 **Evaluated V7 code commit:** \artifacthash{9b25aa66f1db53851b5509949366b0735542ab27}
 
@@ -716,13 +716,14 @@ claim the speed threshold**.
 
 ## W&B reconstruction and provenance
 
-Three real W&B runs were created during final reconstruction. Run `uzc4elyc`
+Three real W&B runs were created offline during final reconstruction and then
+synchronized and remotely verified in the `finished` state. Run
+[`uzc4elyc`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uzc4elyc)
 replays 21 saved fine-tuning history rows and explicitly records
 `replayed_from_saved_events=true` and `live_training_run=false`. Run `wrd1f1c8`
 records the independent final validation metrics. Run `4wb71b3i` records the
 speed/equivalence audit, including the failed local gate and rejection of the
-incomplete H100 comparison. They currently exist in W&B offline mode because
-this workstation has no API credential. The tracked
+incomplete H100 comparison. The tracked
 `docs/evidence/v7/wandb_runs.json` manifest records the exact run IDs and sync
 commands. This preserves the measurements without pretending that replayed
 history was captured live.
@@ -963,7 +964,7 @@ Independent recomputation gives whole-pancreas Dice 0.92015690, lesion Dice 0.61
 - **AI workflow:** `docs/AI_WORKFLOW.md`, 85–95% initial-content estimate, and Section 8.
 - **V7 accuracy gates:** `docs/evidence/v7/optimized_validation_metrics.json`; whole Dice 0.92015690, lesion Dice 0.61963435, and macro-F1 0.74451032 all meet their point thresholds.
 - **V7 speed decision:** not met. `docs/evidence/v7/inference_speed_audit.json` records the complete local negative comparison and why the recovered H100 result is ineligible.
-- **V7 W&B evidence:** offline run IDs `uzc4elyc`, `wrd1f1c8`, and `4wb71b3i`, with provenance labels and exact sync commands in `docs/evidence/v7/wandb_runs.json`.
+- **V7 W&B evidence:** synchronized, remotely verified runs `uzc4elyc`, `wrd1f1c8`, and `4wb71b3i`, with provenance labels and URLs in `docs/evidence/v7/wandb_runs.json`.
 - **Public source:** [GitHub repository](https://github.com/Amirfaham1/pancreas-multitask-nnunet), final V7 branch prepared 2026-08-07.
 - **72 masks and subtype CSV:** selected V7 ZIP SHA-256 \artifacthash{80bd08578878a80fa43789259ad9e45f1b99979f1834428a5ad0bf8b7c13462e}, valid with 72 masks, 72 subtype rows, and zero issues; tracked aggregate audit `docs/evidence/v7/selected_test_package.json`.
 

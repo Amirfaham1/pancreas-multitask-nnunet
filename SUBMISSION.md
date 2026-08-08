@@ -50,5 +50,6 @@ interview-preparation notes.
 - Selected V7 result archive SHA-256:
   `80bd08578878a80fa43789259ad9e45f1b99979f1834428a5ad0bf8b7c13462e`;
   subtype counts `[15, 35, 22]`.
-- W&B evidence: three real offline run IDs with explicit replay provenance and
-  exact sync commands in `docs/evidence/v7/wandb_runs.json`.
+- W&B evidence: three real runs synchronized and remotely verified as
+  `finished`, with explicit replay provenance in
+  `docs/evidence/v7/wandb_runs.json`.
