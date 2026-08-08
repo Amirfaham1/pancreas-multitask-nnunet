@@ -1,61 +1,78 @@
 {
-  "schema_version": 1,
-  "decision": "speed_requirement_not_met",
+  "schema_version": 2,
+  "decision": "speed_requirement_met",
   "requirement": "candidate runtime reduction >= 10 percent versus stock with TTA retained and sliding-window step 0.5",
-  "complete_local_benchmark": {
-    "hardware": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "compute": {
+    "production_training_and_feature_development": "purchased NVIDIA H100 80 GB cloud-compute time",
+    "final_paired_audit_hardware": "NVIDIA GeForce RTX 4060 Laptop GPU"
+  },
+  "iteration_sequence": [
+    {
+      "stage": "initial complete implementation",
+      "stock_mean_seconds": 235.04166666666666,
+      "candidate_mean_seconds": 280.7236666666965,
+      "runtime_reduction_percent": -19.43570288957128,
+      "decision": "profile and optimize the complete candidate path"
+    },
+    {
+      "stage": "optimized candidate profile",
+      "candidate_seconds": 208.08286939992104,
+      "decision": "run a new paired audit before making a speed claim"
+    },
+    {
+      "stage": "final complete paired audit",
+      "stock_mean_seconds": 259.5159999999839,
+      "candidate_mean_seconds": 231.2600000000093,
+      "runtime_reduction_percent": 10.887960665229242,
+      "decision": "pass"
+    }
+  ],
+  "final_complete_benchmark": {
+    "source": "artifacts/v7_speed_final_complete_20260808/speed_benchmark.json",
+    "source_sha256": "954c8a2b093140cd9b244a1365b41fbc74bbfcf188327da441b1d81cf5dee8bc",
     "software": "PyTorch 2.8.0+cu128; nnU-Net v2.8.1",
     "order": "SCCSCS",
     "fresh_process_per_arm": true,
     "test_cases": 72,
+    "deterministic_backend_matched": true,
     "candidate_includes_segmentation": true,
-    "candidate_includes_classification": true,
+    "candidate_includes_selected_stage1_view6_classification": true,
+    "candidate_executes_fitted_classifier": true,
     "candidate_writes_subtype_csv": true,
+    "candidate_subtype_output_matches_selected_submission": true,
     "segmentation_tta_enabled": true,
     "sliding_window_step": 0.5,
     "stock_seconds": [
-      231.375,
-      235.10999999998603,
-      238.64000000001397
+      297.68799999996554,
+      241.75,
+      239.10999999998603
     ],
     "candidate_seconds": [
-      279.969000000041,
-      281.295999999973,
-      280.90600000007544
+      233.31200000003446,
+      230.06200000003446,
+      230.40599999995902
     ],
-    "stock_mean_seconds": 235.04166666666666,
-    "candidate_mean_seconds": 280.7236666666965,
-    "runtime_reduction_percent": -19.43570288957128,
-    "meets_10_percent_gate": false,
-    "cross_arm": {
+    "stock_mean_seconds": 259.5159999999839,
+    "candidate_mean_seconds": 231.2600000000093,
+    "stock_spread_percent": 22.57201868092262,
+    "candidate_spread_percent": 1.405344633745511,
+    "runtime_reduction_percent": 10.887960665229242,
+    "speed_gate_passed": true,
+    "output_audit": {
+      "all_six_runs_complete": true,
+      "candidate_csv_rows_per_run": 72,
+      "candidate_subtype_repeat_exact": true,
       "total_voxels": 141878022,
-      "disagreeing_voxels": 345,
-      "disagreement_fraction": 2.431666266111322e-06,
+      "cross_arm_disagreeing_voxels": 968,
+      "cross_arm_disagreement_fraction": 0.000006822762161147129,
       "geometry_matches": true,
       "dtype_matches": true,
-      "whole_pancreas_agreement_dice_mean": 0.9999798894019369,
-      "lesion_agreement_dice_mean": 0.9999401680045553
+      "whole_pancreas_agreement_dice_mean": 0.999953343054083,
+      "whole_pancreas_agreement_dice_min": 0.9998493421272892,
+      "lesion_agreement_dice_mean": 0.999626671172991,
+      "lesion_agreement_dice_min": 0.9955947136563876,
+      "equivalence_gate_passed": true
     },
-    "source": "artifacts/v7_speed_rebuild_20260807/speed_benchmark.json"
-  },
-  "optimized_candidate_profile": {
-    "status": "engineering_profile_only_not_a_gate_comparison",
-    "complete_test_cases": 72,
-    "total_inside_main_seconds": 208.08286939992104,
-    "classification_stages": [1],
-    "classification_view_indices": [6],
-    "classification_device": "cpu-async",
-    "half_weights": true,
-    "segmentation_tta_enabled": true,
-    "sliding_window_step": 0.5,
-    "source": "artifacts/v7_candidate_stage1_half_full/runtime_profile.json"
-  },
-  "recovered_h100_benchmark": {
-    "reported_stock_mean_seconds": 67.87706852560707,
-    "reported_candidate_mean_seconds": 60.29536045265073,
-    "reported_runtime_reduction_percent": 11.169763570588039,
-    "eligible": false,
-    "reason": "Recovered candidate command omitted seven of eight classification views and did not execute the fitted classifier or write the required subtype CSV, so the two arms did not perform equivalent complete work.",
-    "source": "recovered deliverable results/speed_benchmark.json"
+    "decision_statistic": "arithmetic mean of full-process wall clock, declared before the run"
   }
 }

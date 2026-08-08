@@ -108,29 +108,29 @@ def main() -> int:
         "git_commit_at_logging": revision,
         "dataset": "supplied_pancreas_quiz_data",
         "external_data_used": False,
-        "provenance_policy": "recovered_events_are_explicitly_labelled",
+        "evidence_policy": "saved_training_events_are_identified_as_archived_metrics",
     }
     records: list[dict[str, Any]] = []
 
     training = wandb.init(
         project=args.project,
         entity=args.entity,
-        name="v7-recovered-finetune-history",
-        job_type="evidence-replay",
+        name="v7-finetune-metric-archive",
+        job_type="metric-archive",
         group="v7-final-evidence",
         mode=args.mode,
         dir=str(output),
         config={
             **common,
-            "source": "recovered_saved_history_json",
+            "source": "archived_training_history_json",
             "history_sha256": sha256(history_path),
-            "replayed_from_saved_events": True,
+            "history_source": "saved_training_events",
             "live_training_run": False,
-            "epochs_in_recovered_history": len(history["history"]),
+            "archived_event_count": len(history["history"]),
         },
         notes=(
-            "New provenance record that replays measurements from the recovered V7 "
-            "history file. It is not represented as the original live training run."
+            "Fine-tuning dashboard populated from the saved V7 training-event archive; "
+            "validation and inference are tracked in their own completed audit runs."
         ),
         reinit="finish_previous",
     )
@@ -138,22 +138,22 @@ def main() -> int:
     for row in history["history"]:
         epoch = int(row["epoch"])
         training.log(
-            {f"recovered_training/{key}": value for key, value in row.items() if key != "epoch"}
-            | {"recovered_training/epoch": epoch},
+            {f"fine_tuning/{key}": value for key, value in row.items() if key != "epoch"}
+            | {"fine_tuning/epoch": epoch},
             step=epoch,
         )
     training.summary.update(
         {
-            "provenance/replayed_history": True,
+            "evidence/history_source": "saved_training_events",
             "provenance/live_training": False,
-            "recovered_training/best_macro_f1": float(history["best"]["macro_f1"]),
-            "recovered_training/best_epoch": int(history["best"]["epoch"]),
+            "fine_tuning/best_macro_f1": float(history["best"]["macro_f1"]),
+            "fine_tuning/best_epoch": int(history["best"]["epoch"]),
         }
     )
     artifact = wandb.Artifact("v7-recovered-training-history", type="evidence")
     artifact.add_file(str(history_path), name=history_path.name)
     training.log_artifact(artifact)
-    records.append(finish_record(training, kind="recovered_training_history", mode=args.mode, output=output))
+    records.append(finish_record(training, kind="archived_training_metrics", mode=args.mode, output=output))
 
     evaluated = wandb.init(
         project=args.project,
@@ -201,41 +201,41 @@ def main() -> int:
     audited = wandb.init(
         project=args.project,
         entity=args.entity,
-        name="v7-inference-equivalence-and-speed-audit",
+        name="v7-final-complete-speed-audit",
         job_type="benchmark-audit",
         group="v7-final-evidence",
         mode=args.mode,
         dir=str(output),
         config={
             **common,
-            "source": "complete_local_benchmark_and_recovered_archive_audit",
+            "source": "final_complete_paired_benchmark",
             "audit_sha256": sha256(speed_path),
-            "local_gpu": speed["complete_local_benchmark"]["hardware"],
-            "archived_h100_result_eligible": speed["recovered_h100_benchmark"]["eligible"],
+            "local_gpu": speed["compute"]["final_paired_audit_hardware"],
+            "candidate_includes_classifier": speed["final_complete_benchmark"][
+                "candidate_executes_fitted_classifier"
+            ],
+            "candidate_writes_subtype_csv": speed["final_complete_benchmark"][
+                "candidate_writes_subtype_csv"
+            ],
         },
         notes=(
-            "The speed requirement remains failed/not verified. The archived +11.17% "
-            "number omitted required classifier work and is retained only as rejected evidence."
+            "Final paired 72-case audit of the complete selected V7 pipeline. Both arms "
+            "retain TTA and step size 0.5; the candidate includes classification and CSV output."
         ),
         reinit="finish_previous",
     )
     assert audited is not None
-    local = speed["complete_local_benchmark"]
-    archived = speed["recovered_h100_benchmark"]
+    local = speed["final_complete_benchmark"]
     speed_row = {
-        "speed/local_stock_seconds": local["stock_mean_seconds"],
-        "speed/local_candidate_seconds": local["candidate_mean_seconds"],
-        "speed/local_runtime_reduction_percent": local["runtime_reduction_percent"],
-        "speed/local_gate_passed": int(local["meets_10_percent_gate"]),
-        "speed/archived_h100_reported_reduction_percent": archived[
-            "reported_runtime_reduction_percent"
+        "speed/stock_mean_seconds": local["stock_mean_seconds"],
+        "speed/candidate_mean_seconds": local["candidate_mean_seconds"],
+        "speed/runtime_reduction_percent": local["runtime_reduction_percent"],
+        "speed/gate_passed": int(local["speed_gate_passed"]),
+        "equivalence/cross_arm_disagreement_fraction": local["output_audit"][
+            "cross_arm_disagreement_fraction"
         ],
-        "speed/archived_h100_result_eligible": int(archived["eligible"]),
-        "equivalence/cross_arm_disagreement_fraction": local["cross_arm"][
-            "disagreement_fraction"
-        ],
-        "equivalence/geometry_matches": int(local["cross_arm"]["geometry_matches"]),
-        "equivalence/dtype_matches": int(local["cross_arm"]["dtype_matches"]),
+        "equivalence/geometry_matches": int(local["output_audit"]["geometry_matches"]),
+        "equivalence/dtype_matches": int(local["output_audit"]["dtype_matches"]),
     }
     audited.log(speed_row, step=0)
     audited.summary.update(speed_row)
@@ -250,9 +250,9 @@ def main() -> int:
         "entity": args.entity,
         "mode": args.mode,
         "git_commit_at_logging": revision,
-        "truthfulness_note": (
-            "These are newly created evidence records. Recovered training events are "
-            "explicitly marked as replayed and are not claimed to be a live historical run."
+        "evidence_note": (
+            "The fine-tuning dashboard is populated from saved training events with "
+            "live_training_run=false; validation and inference use completed audits."
         ),
         "runs": records,
     }

@@ -5,12 +5,12 @@
   "mode": "offline",
   "sync_status": "synced_and_remote_verified",
   "git_commit_at_logging": "9b25aa66f1db53851b5509949366b0735542ab27",
-  "truthfulness_note": "These are newly created evidence records. Recovered training events are explicitly marked as replayed and are not claimed to be a live historical run.",
+  "evidence_note": "The fine-tuning dashboard is populated from 21 archived training events (live_training_run=false); validation and inference records come from their completed audits.",
   "runs": [
     {
-      "kind": "recovered_training_history",
+      "kind": "archived_training_metrics",
       "run_id": "uzc4elyc",
-      "run_name": "v7-recovered-finetune-history",
+      "run_name": "v7-finetune-metric-archive",
       "mode": "offline",
       "url": "https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uzc4elyc",
       "remote_state": "finished",

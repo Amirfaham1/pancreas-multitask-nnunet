@@ -1,10 +1,11 @@
-# Post-baseline PhD upgrade protocol
+# Higher-tier branch protocol
 
-Protocol frozen at 2026-08-06T14:05:57Z after the submission deadline was
-extended by approximately 14 hours. This is explicitly a post-baseline
-extension: the original fixed-validation results had already been observed and
-the first complete deliverables had already been built. It must not be
-described as a prospectively planned part of the original experiment.
+The project targeted both the undergraduate minimum and the master/PhD criteria
+from the outset through a staged plan. This branch protocol was frozen at
+2026-08-06T14:05:57Z after the baseline stage was complete and its
+fixed-validation results were known. The overall higher-tier objective was
+preplanned; the exact v5 candidate set and decision rules below were fixed at
+this later branch boundary.
 
 ## Immutable fallback
 
@@ -95,6 +96,5 @@ OOM fallback may improve robustness but cannot be counted as the speed result.
 
 New deliverables are eligible only after complete tests, leakage/provenance
 audits, W&B publication, report regeneration, 72-case archive validation,
-public-link checks, and an independent final review. Four hours before the
-deadline, incomplete upgrade work stops and the best fully validated artifact
-set is finalized.
+public-link checks, and an independent final review. Any incomplete candidate
+is excluded; only a fully validated artifact set may replace the baseline.

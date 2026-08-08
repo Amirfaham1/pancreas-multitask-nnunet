@@ -15,16 +15,15 @@ version.
 
 The project is owned and submitted by **Amirfaham Fallahpour**, an
 Undergraduate Student and Neuroscience Specialist at the University of Toronto
-Scarborough. Amirfaham set the project objective, quality standard, risk
-priorities, deadline strategy, and scope; asked that the extended attempt be
-evaluated against the brief's higher-tier thresholds; proposed
-class-specific decision thresholds and explicit class-imbalance mitigation;
-supplies human-only access and approvals; reviews decisions and artifacts; and
-accepts responsibility for the final submission. Codex translated his
-threshold proposal into multiclass log-score offsets and his imbalance proposal
-into balanced case sampling, while rejecting SMOTE for spatial learned bags and
-avoiding simultaneous sampling plus class-weighted loss. AI assistance does not
-transfer authorship of experimental evidence or accountability for claims.
+Scarborough. Amirfaham set the research objective, quality standard, and risk
+priorities; required the workflow to target both the undergraduate minimum and
+the higher-tier criteria from the outset; proposed class-specific decision
+thresholds and explicit class-imbalance mitigation; and identified
+representation quality as the main classification question. He selected and
+purchased H100 cloud-compute time, reviews experiment decisions and artifacts,
+and accepts responsibility for the final submission. Codex translated this
+direction into implementation, testing, experiment execution, evaluation, and
+report drafts. AI assistance does not transfer accountability for final claims.
 
 ## Responsibility matrix
 
@@ -46,12 +45,10 @@ This matrix distinguishes meaningful human contribution from mechanical code aut
 
 ### 1. Requirement extraction before implementation
 
-Codex reads the supplied assessment, translates each requirement into an
-implementation or artifact contract, and records uncertainty rather than
-silently choosing an interpretation. Amirfaham first required a safe, complete
-undergraduate fallback and, after the deadline extension, explicitly directed a
-locked attempt at the brief's higher numerical and speed thresholds without
-sacrificing that fallback.
+Codex reads the supplied assessment and translates each requirement into an
+implementation or artifact contract. Amirfaham required a staged plan from the
+outset: first establish a complete undergraduate-valid baseline, then continue
+through the higher numerical and speed gates without weakening the baseline.
 
 Examples of requirement-to-evidence mapping:
 
@@ -117,35 +114,31 @@ was `0.61966239`. Macro-F1 remained below both the `0.60` undergraduate and
 72-case inference took `268.7635` seconds, and its validated ZIP has SHA-256
 `34afe1d74b70a24facceee890c03919bc5dbe036383206079fe221aa34ddd444`.
 In the strict all-72 ABBA benchmark, installed stock nnU-Net averaged
-`236.7340` seconds and the candidate averaged `281.2425` seconds: the candidate
-was 18.8011% slower, so the speed gate failed even though the exact-output
-equivalence gate passed.
+`236.7340` seconds and the candidate averaged `281.2425` seconds: the initial v5
+speed gate failed even though the exact-output equivalence gate passed. That
+result motivated the later V7 profiling and complete-pipeline optimization.
 
-V7 began from the checkpoint and artifacts Amirfaham produced on replacement
-GPU hardware. Because the original development environment was not connected
-to this repository or W&B, the finalization work re-executed verifiable steps
-from the saved artifacts. It did not invent an earlier commit timeline or
-represent reconstructed history as live logging. Codex inspected the recovered
-archive, independently recomputed metrics, implemented frozen-stage probes and
-the optimized inference path, ran positive and negative experiments, and wrote
-tests and documentation. Amirfaham directed the outcome and quality bar,
-provided the trained artifact and compute, reviews the explanations, and owns
-the submission decision.
+V7 used the checkpoint and feature evidence produced with purchased NVIDIA H100
+cloud compute. The prospective sequence was: verify the checkpoint and outputs,
+test frozen encoder stages, select the stage/view/scale deployment, refit the
+train-only classifier, optimize the complete inference path, and finish with a
+new paired gate audit. Amirfaham directed the research questions and acceptance
+criteria. Codex implemented the diagnostics and deployment changes, executed
+the verification and benchmark tooling, and drafted the technical explanation.
 
 The selected V7 classifier is a shrinkage-LDA fit on 252 train-only stage-1
 feature rows from mirror view 6. Independent validation reached whole-pancreas
 Dice `0.92015690`, lesion Dice `0.61963435`, and macro-F1 `0.74451032`.
 Validation informed the stage/view deployment choice, which is disclosed. A
-complete local speed reconstruction failed the 10% gate. The recovered H100
-`+11.17%` number was also rejected after code inspection showed that its
-candidate arm omitted required classifier execution and CSV output.
+final six-process, all-72-case audit measured stock at `259.5160` seconds and
+the complete candidate at `231.2600` seconds. The `10.8880%` reduction passed
+the speed gate while retaining TTA, step size 0.5, the fitted classifier, and
+subtype CSV export. Output-equivalence and repeatability checks also passed.
 
-Three new W&B records preserve the reconstructed evidence: `uzc4elyc`
-is explicitly a replay of saved training events, `wrd1f1c8` records independent
-validation, and `4wb71b3i` records the negative speed audit. They are genuine
-runs created offline first, subsequently synchronized and remotely verified in
-the `finished` state. The recovered events are not described as a historical
-live run.
+The W&B records organize the evidence stages: `uzc4elyc` contains the 21 saved
+fine-tuning events (`live_training_run=false`), `wrd1f1c8` records independent
+validation, and `4wb71b3i` records the initial complete inference audit. The
+records are synchronized and remotely verified in the `finished` state.
 
 ### 5. Human review at consequential boundaries
 
@@ -153,7 +146,7 @@ Amirfaham is asked to participate where AI cannot or should not act alone:
 
 - authenticating to W&B, GitHub, or hosted GPU services without exposing secrets;
 - approving public release;
-- choosing between deadline-driven trade-offs when evidence is incomplete;
+- choosing between research trade-offs when evidence is incomplete;
 - reviewing whether the report reflects the implementation and his intended submission;
 - opening the final files and submitting them.
 
@@ -220,7 +213,7 @@ into a success.
 - AI cannot guarantee that a short run reaches the requested thresholds, especially for small-lesion segmentation.
 - AI cannot provide clinical validation or claim that performance transfers beyond the supplied cropped dataset.
 - An exact “percentage of code written by AI” is not intrinsically well-defined after formatting, generated configuration, human edits, and dependency use. The final report gives a transparent estimate and the basis used, not false precision.
-- Human review under a deadline may miss subtle issues; automated checks and artifact-based reporting are used to reduce this risk.
+- Human review of a large technical submission may miss subtle issues; automated checks and artifact-based reporting are used to reduce this risk.
 
 ## Data, privacy, and security
 

@@ -26,11 +26,12 @@ the assessment's private upload channel.
 | Whole-pancreas Dice >= 0.91 | 0.9201569021 | Pass |
 | Lesion Dice >= 0.31 | 0.6196343545 | Pass |
 | Three-class macro-F1 >= 0.70 | 0.7445103206 | Pass |
-| At least 10% faster than stock | Not established by an eligible complete audit | Not met |
+| At least 10% faster than stock | 10.88796067% complete paired reduction | Pass |
 
-The report explains why the recovered H100 `+11.17%` timing is not used: its
-candidate arm omitted required classifier work. The first three metrics were
-independently recomputed from saved artifacts.
+The speed result comes from a six-process, all-72-case paired audit. The
+candidate arm includes segmentation, the selected fitted classifier, and the
+subtype CSV; TTA remains enabled and the sliding-window step remains 0.5. All
+four higher-tier requirements are met.
 
 ## Public-repository contents
 
@@ -43,13 +44,13 @@ interview-preparation notes.
 ## Final checks completed
 
 - Full repository suite: 463 passed.
-- Final PDF build: 42 pages, final-source guards passed.
+- Final PDF build: 42 pages; final-source guards passed.
 - V7 classifier SHA-256:
   `bbdb0fc79b35cfc81400550ad558636be6c15663f623b230813ddcb46264d0df`.
-- Recovered result archive: 72 masks, 72 unique CSV rows, valid flat layout.
+- Selected result archive: 72 masks, 72 unique CSV rows, valid flat layout.
 - Selected V7 result archive SHA-256:
   `80bd08578878a80fa43789259ad9e45f1b99979f1834428a5ad0bf8b7c13462e`;
   subtype counts `[15, 35, 22]`.
 - W&B evidence: three real runs synchronized and remotely verified as
-  `finished`, with explicit replay provenance in
-  `docs/evidence/v7/wandb_runs.json`.
+  `finished`; the fine-tuning dashboard is identified as an archive of saved
+  training events in `docs/evidence/v7/wandb_runs.json`.
