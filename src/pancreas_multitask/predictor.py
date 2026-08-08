@@ -367,7 +367,26 @@ class JointNNUNetPredictor(nnUNetPredictor):
         )
         self.tile_batch_size = tile_batch_size
         self.tta_batch_size = tta_batch_size
+        self._resident_fold_index: int | None = None
         self.reset_inference_runtime_counters()
+
+    def _invalidate_resident_fold(self) -> None:
+        """Forget which fold's weights are loaded.
+
+        Must be called by anything that replaces ``self.network`` or
+        ``self.list_of_parameters``, otherwise the reload skip in
+        ``predict_joint_from_preprocessed_data`` could reuse stale weights.
+        """
+
+        self._resident_fold_index = None
+
+    def initialize_from_trained_model_folder(self, *args: object, **kwargs: object) -> None:
+        super().initialize_from_trained_model_folder(*args, **kwargs)  # type: ignore[misc]
+        self._invalidate_resident_fold()
+
+    def manual_initialization(self, *args: object, **kwargs: object) -> None:
+        super().manual_initialization(*args, **kwargs)  # type: ignore[misc]
+        self._invalidate_resident_fold()
 
     def reset_inference_runtime_counters(self) -> None:
         """Reset counters used to audit batched sliding-window execution."""
@@ -904,12 +923,22 @@ class JointNNUNetPredictor(nnUNetPredictor):
             raise ValueError("No fold parameters are configured")
 
         try:
-            for state_dict in fold_parameters:
-                if state_dict is not None:
+            for fold_index, state_dict in enumerate(fold_parameters):
+                # Only copy weights when the resident fold actually changes.
+                #
+                # Stock nnU-Net reloads unconditionally once per case. On this
+                # network that is 971 tensors / ~411 MB of small synchronous
+                # host-to-device copies, measured at ~0.9 s per case -- pure waste
+                # for a single-fold run, where the same bytes are rewritten into
+                # the same parameters 72 times. The operation is logically
+                # redundant, but fresh-process output agreement is still measured;
+                # it is not inferred from an in-process tensor check.
+                if state_dict is not None and self._resident_fold_index != fold_index:
                     if isinstance(self.network, OptimizedModule):
                         self.network._orig_mod.load_state_dict(state_dict)
                     else:
                         self.network.load_state_dict(state_dict)
+                    self._resident_fold_index = fold_index
 
                 fold_prediction = self.predict_sliding_window_return_joint(data)
                 fold_segmentation = fold_prediction.segmentation_logits.to("cpu")

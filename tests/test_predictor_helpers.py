@@ -63,6 +63,7 @@ def _bare_predictor(
     predictor.list_of_parameters = None
     predictor.tile_batch_size = tile_batch_size
     predictor.tta_batch_size = tta_batch_size
+    predictor._resident_fold_index = None
     predictor.reset_inference_runtime_counters()
     return predictor
 
@@ -366,6 +367,11 @@ class _FoldStateNetwork(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.value = nn.Parameter(torch.tensor(0.0))
+        self.load_count = 0
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        self.load_count += 1
+        return super().load_state_dict(state_dict, *args, **kwargs)
 
     def forward(self, x, *, return_classification=False):
         segmentation = x[:, :1] + self.value
@@ -451,6 +457,20 @@ def test_fold_ensemble_loads_each_state_and_averages_explicit_results() -> None:
         prediction.classification_probabilities,
         torch.tensor([0.5, 0.5]),
     )
+
+
+def test_single_fold_is_loaded_once_until_explicitly_invalidated() -> None:
+    network = _FoldStateNetwork()
+    predictor = _bare_predictor(network, _FoldOnlyPredictor)
+    predictor.list_of_parameters = ({"value": torch.tensor(1.0)},)
+
+    for _ in range(2):
+        predictor.predict_joint_from_preprocessed_data(torch.zeros((1, 2, 2, 2)))
+    assert network.load_count == 1
+
+    predictor._invalidate_resident_fold()
+    predictor.predict_joint_from_preprocessed_data(torch.zeros((1, 2, 2, 2)))
+    assert network.load_count == 2
 
 
 def test_failed_device_attempt_cannot_leak_votes_into_cpu_retry() -> None:
