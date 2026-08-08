@@ -140,11 +140,12 @@ complete local speed reconstruction failed the 10% gate. The recovered H100
 `+11.17%` number was also rejected after code inspection showed that its
 candidate arm omitted required classifier execution and CSV output.
 
-Three new W&B offline records preserve the reconstructed evidence: `uzc4elyc`
+Three new W&B records preserve the reconstructed evidence: `uzc4elyc`
 is explicitly a replay of saved training events, `wrd1f1c8` records independent
 validation, and `4wb71b3i` records the negative speed audit. They are genuine
-offline runs awaiting authentication and are not described as historical live
-runs or public URLs.
+runs created offline first, subsequently synchronized and remotely verified in
+the `finished` state. The recovered events are not described as a historical
+live run.
 
 ### 5. Human review at consequential boundaries
 

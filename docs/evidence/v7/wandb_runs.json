@@ -1,8 +1,9 @@
 {
   "schema_version": 1,
   "project": "pancreas-multitask-v7",
-  "entity": null,
+  "entity": "amirfahamfallahpour1379-university-of-toronto",
   "mode": "offline",
+  "sync_status": "synced_and_remote_verified",
   "git_commit_at_logging": "9b25aa66f1db53851b5509949366b0735542ab27",
   "truthfulness_note": "These are newly created evidence records. Recovered training events are explicitly marked as replayed and are not claimed to be a live historical run.",
   "runs": [
@@ -11,7 +12,8 @@
       "run_id": "uzc4elyc",
       "run_name": "v7-recovered-finetune-history",
       "mode": "offline",
-      "url": null,
+      "url": "https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uzc4elyc",
+      "remote_state": "finished",
       "run_directory": "artifacts/wandb_v7/wandb/offline-run-20260807_224644-uzc4elyc/files",
       "sync_command": "wandb sync artifacts/wandb_v7/wandb/offline-run-20260807_224644-uzc4elyc"
     },
@@ -20,7 +22,8 @@
       "run_id": "wrd1f1c8",
       "run_name": "v7-independent-validation",
       "mode": "offline",
-      "url": null,
+      "url": "https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/wrd1f1c8",
+      "remote_state": "finished",
       "run_directory": "artifacts/wandb_v7/wandb/offline-run-20260807_224656-wrd1f1c8/files",
       "sync_command": "wandb sync artifacts/wandb_v7/wandb/offline-run-20260807_224656-wrd1f1c8"
     },
@@ -29,7 +32,8 @@
       "run_id": "4wb71b3i",
       "run_name": "v7-inference-equivalence-and-speed-audit",
       "mode": "offline",
-      "url": null,
+      "url": "https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/4wb71b3i",
+      "remote_state": "finished",
       "run_directory": "artifacts/wandb_v7/wandb/offline-run-20260807_224657-4wb71b3i/files",
       "sync_command": "wandb sync artifacts/wandb_v7/wandb/offline-run-20260807_224657-4wb71b3i"
     }
