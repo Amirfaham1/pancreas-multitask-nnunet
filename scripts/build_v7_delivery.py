@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import shutil
@@ -19,7 +20,13 @@ ROOT = Path(__file__).resolve().parents[1]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, required=True)
-    parser.add_argument("--results-zip", type=Path, required=True)
+    results = parser.add_mutually_exclusive_group(required=True)
+    results.add_argument("--results-zip", type=Path)
+    results.add_argument(
+        "--results-directory",
+        type=Path,
+        help="Directory containing exactly the selected masks, subtype CSV, and optional profiles",
+    )
     parser.add_argument("--wandb-directory", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=ROOT / "delivery" / "v7_final")
     return parser.parse_args()
@@ -47,11 +54,18 @@ def main() -> int:
     output.mkdir(parents=True, exist_ok=True)
 
     report = args.report.expanduser().resolve()
-    results = args.results_zip.expanduser().resolve()
+    results = (
+        args.results_zip.expanduser().resolve()
+        if args.results_zip is not None
+        else args.results_directory.expanduser().resolve()
+    )
     wandb_directory = args.wandb_directory.expanduser().resolve()
-    for path in (report, results):
-        if not path.is_file():
-            raise FileNotFoundError(path)
+    if not report.is_file():
+        raise FileNotFoundError(report)
+    if args.results_zip is not None and not results.is_file():
+        raise FileNotFoundError(results)
+    if args.results_directory is not None and not results.is_dir():
+        raise NotADirectoryError(results)
     if not wandb_directory.is_dir():
         raise NotADirectoryError(wandb_directory)
 
@@ -76,7 +90,27 @@ def main() -> int:
     report_target = output / "Amirfaham_Fallahpour_results.pdf"
     result_target = output / "Amirfaham_Fallahpour_results.zip"
     shutil.copy2(report, report_target)
-    shutil.copy2(results, result_target)
+    if args.results_zip is not None:
+        shutil.copy2(results, result_target)
+    else:
+        masks = sorted(results.glob("*.nii.gz"))
+        subtype_csv = results / "subtype_results.csv"
+        if len(masks) != 72 or not subtype_csv.is_file():
+            raise RuntimeError(
+                f"Selected result directory must contain 72 masks and subtype_results.csv: {results}"
+            )
+        zip_tree(
+            result_target,
+            [(mask, mask.name) for mask in masks]
+            + [(subtype_csv, "subtype_results.csv")],
+        )
+
+    with zipfile.ZipFile(result_target) as archive:
+        with archive.open("subtype_results.csv") as raw:
+            rows = list(csv.DictReader(line.decode("utf-8") for line in raw))
+    if len(rows) != 72 or any(row.get("Subtype") not in {"0", "1", "2"} for row in rows):
+        raise RuntimeError("Packaged subtype_results.csv is incomplete or invalid")
+    subtype_counts = [sum(row["Subtype"] == str(label) for row in rows) for label in range(3)]
 
     evidence_files: list[tuple[Path, str]] = []
     evidence_root = ROOT / "docs" / "evidence" / "v7"
@@ -114,6 +148,11 @@ def main() -> int:
             "macro_f1": 0.7445103205972771,
             "accuracy_gates_passed": True,
             "speed_gate_passed": False,
+        },
+        "test_predictions": {
+            "cases": 72,
+            "classifier": "selected_stage1_view6_scale1_shrinkage_lda",
+            "subtype_counts": subtype_counts,
         },
         "public_github_release": [
             source_archive.name,
