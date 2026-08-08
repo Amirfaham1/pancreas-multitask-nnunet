@@ -23,6 +23,8 @@ import tempfile
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from queue import Queue
+from threading import Thread
 
 import numpy as np
 import torch
@@ -368,6 +370,7 @@ class JointNNUNetPredictor(nnUNetPredictor):
         self.tile_batch_size = tile_batch_size
         self.tta_batch_size = tta_batch_size
         self._resident_fold_index: int | None = None
+        self._segmentation_only_forward = False
         self.reset_inference_runtime_counters()
 
     def _invalidate_resident_fold(self) -> None:
@@ -387,6 +390,89 @@ class JointNNUNetPredictor(nnUNetPredictor):
     def manual_initialization(self, *args: object, **kwargs: object) -> None:
         super().manual_initialization(*args, **kwargs)  # type: ignore[misc]
         self._invalidate_resident_fold()
+
+    def retain_initialized_single_fold(self) -> None:
+        """Keep nnU-Net's already loaded first fold and release its duplicate state.
+
+        ``initialize_from_trained_model_folder`` loads fold zero into the network
+        before returning. For a declared single-fold deployment, retaining another
+        full CPU state dict only to reload identical bytes on the first case is
+        redundant. Setting ``list_of_parameters`` to ``None`` uses the predictor's
+        existing current-network single-fold contract.
+        """
+
+        parameters = self.list_of_parameters
+        if parameters is None:
+            self._resident_fold_index = 0
+            return
+        if len(parameters) != 1:
+            raise ValueError("retain_initialized_single_fold requires exactly one fold")
+        self.list_of_parameters = None
+        self._resident_fold_index = 0
+
+    @torch.inference_mode()
+    def predict_segmentation_only_from_preprocessed_data(self, data: Tensor) -> Tensor:
+        """Run stock nnU-Net segmentation without evaluating the legacy case head.
+
+        V7 classification is produced by the separate shallow stage-1/stage-2
+        classifier. Computing the original bottleneck head for every sliding-window
+        tile is therefore dead work. This path retains nnU-Net's segmentation
+        arithmetic while reusing an already resident single-fold state.
+        """
+
+        old_num_threads = torch.get_num_threads()
+        torch.set_num_threads(min(default_num_processes, old_num_threads))
+        parameters = self.list_of_parameters
+        fold_parameters: Sequence[dict[str, Tensor] | None]
+        fold_parameters = (None,) if parameters is None else tuple(parameters)
+        if not fold_parameters:
+            torch.set_num_threads(old_num_threads)
+            raise ValueError("No fold parameters are configured")
+
+        prediction: Tensor | None = None
+        try:
+            for fold_index, state_dict in enumerate(fold_parameters):
+                if state_dict is not None and self._resident_fold_index != fold_index:
+                    if isinstance(self.network, OptimizedModule):
+                        self.network._orig_mod.load_state_dict(state_dict)
+                    else:
+                        self.network.load_state_dict(state_dict)
+                    self._resident_fold_index = fold_index
+                fold_prediction = self.predict_sliding_window_return_logits(data).to("cpu")
+                prediction = (
+                    fold_prediction
+                    if prediction is None
+                    else prediction + fold_prediction
+                )
+            if prediction is None:
+                raise RuntimeError("Segmentation inference produced no fold prediction")
+            if len(fold_parameters) > 1:
+                prediction /= len(fold_parameters)
+            return prediction
+        finally:
+            torch.set_num_threads(old_num_threads)
+
+    @torch.inference_mode()
+    def predict_batched_segmentation_only_from_preprocessed_data(
+        self, data: Tensor
+    ) -> Tensor:
+        """Use the audited tile/TTA batching path without the obsolete case head.
+
+        The joint accumulator already implements ordered tile accumulation and
+        adaptive CUDA-OOM fallback. A scoped forward flag lets that machinery run
+        the network's normal segmentation output while supplying an ignored dummy
+        class tensor to the internal carrier. The flag is always cleared, including
+        after an exception, so later joint predictions cannot silently lose their
+        classifier output.
+        """
+
+        if getattr(self, "_segmentation_only_forward", False):
+            raise RuntimeError("Segmentation-only prediction is not re-entrant")
+        self._segmentation_only_forward = True
+        try:
+            return self.predict_joint_from_preprocessed_data(data).segmentation_logits
+        finally:
+            self._segmentation_only_forward = False
 
     def reset_inference_runtime_counters(self) -> None:
         """Reset counters used to audit batched sliding-window execution."""
@@ -539,6 +625,18 @@ class JointNNUNetPredictor(nnUNetPredictor):
 
     def _forward_joint(self, x: Tensor) -> tuple[Tensor, Tensor]:
         self._record_joint_forward(int(x.shape[0]))
+        if getattr(self, "_segmentation_only_forward", False):
+            segmentation_logits = self.network(x)
+            if not isinstance(segmentation_logits, Tensor):
+                raise TypeError(
+                    "Segmentation-only inference requires the network to return one tensor"
+                )
+            dummy_classification = torch.zeros(
+                (segmentation_logits.shape[0], 2),
+                dtype=segmentation_logits.dtype,
+                device=segmentation_logits.device,
+            )
+            return segmentation_logits, dummy_classification
         return self._validate_joint_network_output(
             self.network(x, return_classification=True)
         )
@@ -734,6 +832,26 @@ class JointNNUNetPredictor(nnUNetPredictor):
             active_batch_size = int(
                 getattr(self, "_adaptive_tile_batch_size", requested_batch_size)
             )
+            prefetch_queue = None
+            prefetch_thread = None
+            if requested_batch_size == 1:
+                prefetch_queue = Queue(maxsize=2)
+
+                def producer() -> None:
+                    for sliding_slice in slicers:
+                        prefetch_queue.put(
+                            torch.clone(
+                                data[sliding_slice][None],
+                                memory_format=torch.contiguous_format,
+                            ).to(self.device)
+                        )
+
+                prefetch_thread = Thread(
+                    target=producer,
+                    name="joint-tile-prefetch",
+                    daemon=True,
+                )
+                prefetch_thread.start()
             progress = tqdm(total=len(slicers), disable=not self.allow_tqdm)
             tile_index = 0
             while tile_index < len(slicers):
@@ -742,16 +860,19 @@ class JointNNUNetPredictor(nnUNetPredictor):
                 )
                 workon = None
                 try:
-                    workon = torch.stack(
-                        [
-                            torch.clone(
-                                data[sliding_slice],
-                                memory_format=torch.contiguous_format,
-                            )
-                            for sliding_slice in batch_slicers
-                        ],
-                        dim=0,
-                    ).to(self.device)
+                    if prefetch_queue is not None:
+                        workon = prefetch_queue.get()
+                    else:
+                        workon = torch.stack(
+                            [
+                                torch.clone(
+                                    data[sliding_slice],
+                                    memory_format=torch.contiguous_format,
+                                )
+                                for sliding_slice in batch_slicers
+                            ],
+                            dim=0,
+                        ).to(self.device)
                     tile = self._internal_maybe_mirror_and_predict_joint(workon)
                 except RuntimeError as error:
                     if active_batch_size == 1 or not self._is_out_of_memory_error(error):
@@ -811,8 +932,15 @@ class JointNNUNetPredictor(nnUNetPredictor):
                 self._record_completed_tile_batch(batch_count)
                 tile_index += batch_count
                 progress.update(batch_count)
+                if prefetch_queue is not None:
+                    prefetch_queue.task_done()
                 del tile, workon
                 workon = None
+
+            if prefetch_queue is not None:
+                prefetch_queue.join()
+            if prefetch_thread is not None:
+                prefetch_thread.join()
 
             if classification_sum is None or classification_count == 0:
                 raise RuntimeError("Sliding-window prediction produced no tiles")

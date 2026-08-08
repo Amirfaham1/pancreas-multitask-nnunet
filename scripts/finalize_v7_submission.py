@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sys
 import time
 import zipfile
@@ -41,6 +42,7 @@ import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+os.environ.setdefault("nnUNet_extTrainer", str((ROOT / "src").resolve()))
 
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis  # noqa: E402
 from sklearn.pipeline import make_pipeline  # noqa: E402
@@ -139,11 +141,11 @@ def main() -> int:
                 predictor.configuration_manager, predictor.dataset_json,
             )
             tensor = torch.from_numpy(np.asarray(data, dtype=np.float32))
-            prediction = predictor.predict_joint_from_preprocessed_data(tensor)
+            segmentation_logits = predictor.predict_segmentation_only_from_preprocessed_data(tensor)
             features = stage_features(network, tensor, CLASSIFICATION_STAGES, device)
             records.append({
                 "case_id": case_id, "features": features,
-                "logits": prediction.segmentation_logits, "properties": properties,
+                "logits": segmentation_logits, "properties": properties,
                 "mask_path": None if masks is None else masks.get(case_id),
             })
             if index == 1 or index % 20 == 0 or index == len(images):

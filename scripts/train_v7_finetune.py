@@ -25,6 +25,7 @@ import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+os.environ.setdefault("nnUNet_extTrainer", str((ROOT / "src").resolve()))
 
 from sklearn.metrics import f1_score  # noqa: E402
 

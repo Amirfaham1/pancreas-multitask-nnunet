@@ -70,7 +70,7 @@ def test_subtype_csv_requires_exact_membership_and_label_domain(tmp_path: Path) 
     }
 
 
-def test_candidate_classification_timing_includes_all_eight_mirror_views() -> None:
+def test_candidate_classification_batches_all_eight_mirror_views() -> None:
     module = _module(ARM_SCRIPT)
 
     class Network:
@@ -91,6 +91,33 @@ def test_candidate_classification_timing_includes_all_eight_mirror_views() -> No
         torch.device("cpu"),
     )
 
-    assert network.calls == 8
+    assert network.calls == 4
+    assert features.shape == (192,)
+    assert np.isfinite(features).all()
+
+
+def test_candidate_classification_can_run_locked_single_view() -> None:
+    module = _module(ARM_SCRIPT)
+
+    class Network:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def encode_to_stages(self, volume, stages):
+            self.calls += 1
+            return {
+                1: volume.repeat(1, 64, 1, 1, 1),
+                2: volume.repeat(1, 128, 1, 1, 1),
+            }
+
+    network = Network()
+    features = module._classification_features(
+        network,
+        torch.arange(32, dtype=torch.float32).reshape(1, 2, 4, 4),
+        torch.device("cpu"),
+        view_indices=(6,),
+    )
+
+    assert network.calls == 1
     assert features.shape == (192,)
     assert np.isfinite(features).all()

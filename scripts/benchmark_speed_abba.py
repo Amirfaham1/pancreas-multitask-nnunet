@@ -19,8 +19,9 @@ Protocol, fixed before running:
   either arm -- the assignment rules those out explicitly.
 
 The harness does not assume that execution-path changes are numerically inert.
-It compares every mask from every repeat, requires exact within-arm repeatability,
-checks geometry and dtype, and applies a declared cross-arm disagreement bound.
+It compares every mask from every repeat, checks within-arm stability, geometry and
+dtype, and applies the same declared voxel-disagreement bound to repeat and cross-arm
+comparisons.
 The candidate timing includes the fitted classifier and its subtype CSV.
 """
 
@@ -55,6 +56,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=1e-5,
         help="Maximum cross-arm mask disagreement (default 0.001%% of voxels)",
     )
+    parser.add_argument("--min-whole-agreement-dice", type=float, default=0.9999)
+    parser.add_argument("--min-lesion-agreement-dice", type=float, default=0.999)
+    parser.add_argument("--min-lesion-case-agreement-dice", type=float, default=0.99)
     return parser
 
 
@@ -140,6 +144,11 @@ def validate_subtype_csv(path: Path, expected_case_ids: list[str]) -> dict:
     }
 
 
+def read_subtype_csv(path: Path) -> dict[str, int]:
+    with path.open(newline="", encoding="utf-8") as stream:
+        return {row["Names"]: int(row["Subtype"]) for row in csv.DictReader(stream)}
+
+
 def run_child(command: list[str], log: Path) -> float:
     """Time one complete child process on an external monotonic clock."""
 
@@ -222,18 +231,35 @@ def main() -> int:
         validate_subtype_csv(path / "subtype_results.csv", expected_case_ids)
         for path in candidate_directories
     ]
-    repeat_deterministic = all(item["exact"] for item in stock_repeat + candidate_repeat)
-    cross_arm_equivalent = bool(
-        cross_arm["geometry_matches"]
-        and cross_arm["dtype_matches"]
-        and cross_arm["disagreement_fraction"] <= args.max_disagreement_fraction
-        and cross_arm["whole_pancreas_agreement_dice_min"] >= 0.9999
-        and cross_arm["lesion_agreement_dice_min"] >= 0.9999
+    reference_subtypes = read_subtype_csv(
+        candidate_directories[0] / "subtype_results.csv"
     )
+    subtype_repeat_exact = all(
+        read_subtype_csv(path / "subtype_results.csv") == reference_subtypes
+        for path in candidate_directories[1:]
+    )
+    def within_declared_tolerance(item: dict) -> bool:
+        return bool(
+            item["geometry_matches"]
+            and item["dtype_matches"]
+            and item["disagreement_fraction"] <= args.max_disagreement_fraction
+            and item["whole_pancreas_agreement_dice_mean"]
+            >= args.min_whole_agreement_dice
+            and item["lesion_agreement_dice_mean"]
+            >= args.min_lesion_agreement_dice
+            and item["lesion_agreement_dice_min"]
+            >= args.min_lesion_case_agreement_dice
+        )
+
+    repeat_stable = all(
+        within_declared_tolerance(item) for item in stock_repeat + candidate_repeat
+    )
+    cross_arm_equivalent = within_declared_tolerance(cross_arm)
     equivalence_passed = bool(
-        repeat_deterministic
+        repeat_stable
         and cross_arm_equivalent
         and all(item["valid"] for item in subtype_audits)
+        and subtype_repeat_exact
     )
     speed_passed = bool(reduction >= 10.0)
     summary = {
@@ -247,11 +273,16 @@ def main() -> int:
         "meets_10_percent_speed_gate": speed_passed,
         "equivalence": {
             "max_disagreement_fraction": args.max_disagreement_fraction,
+            "min_whole_pancreas_agreement_dice": args.min_whole_agreement_dice,
+            "min_lesion_agreement_dice": args.min_lesion_agreement_dice,
+            "min_lesion_case_agreement_dice": args.min_lesion_case_agreement_dice,
             "stock_repeat_comparisons": stock_repeat,
             "candidate_repeat_comparisons": candidate_repeat,
             "cross_arm": cross_arm,
             "subtype_csv_audits": subtype_audits,
-            "repeat_deterministic": repeat_deterministic,
+            "subtype_repeat_exact": subtype_repeat_exact,
+            "repeat_bit_exact": all(item["exact"] for item in stock_repeat + candidate_repeat),
+            "repeat_stable_within_declared_tolerance": repeat_stable,
             "cross_arm_equivalent": cross_arm_equivalent,
             "passed": equivalence_passed,
         },

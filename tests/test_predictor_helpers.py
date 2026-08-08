@@ -390,6 +390,11 @@ class _FoldOnlyPredictor(JointNNUNetPredictor):
         )
 
 
+class _SegmentationOnlyPredictor(JointNNUNetPredictor):
+    def predict_sliding_window_return_logits(self, input_image):
+        return self.network(input_image[None])[0]
+
+
 class _RetryOnlyPredictor(JointNNUNetPredictor):
     def _internal_predict_sliding_window_return_joint(
         self, data, slicers, do_on_device=True
@@ -470,6 +475,22 @@ def test_single_fold_is_loaded_once_until_explicitly_invalidated() -> None:
 
     predictor._invalidate_resident_fold()
     predictor.predict_joint_from_preprocessed_data(torch.zeros((1, 2, 2, 2)))
+    assert network.load_count == 2
+
+
+def test_segmentation_only_path_skips_the_joint_head_and_averages_folds() -> None:
+    network = _FoldStateNetwork()
+    predictor = _bare_predictor(network, _SegmentationOnlyPredictor)
+    predictor.list_of_parameters = (
+        {"value": torch.tensor(1.0)},
+        {"value": torch.tensor(-1.0)},
+    )
+
+    logits = predictor.predict_segmentation_only_from_preprocessed_data(
+        torch.zeros((1, 2, 2, 2))
+    )
+
+    assert torch.equal(logits, torch.zeros((1, 2, 2, 2)))
     assert network.load_count == 2
 
 
