@@ -1,16 +1,11 @@
 --extra-index-url https://download.pytorch.org/whl/cu128
 
-# PyTorch 2.9 is intentionally excluded because nnU-Net documents a severe
-# AMP/3D-convolution performance regression in that release line.
 torch==2.8.0+cu128
 torchvision==0.23.0+cu128
 nnunetv2==2.8.1
 dynamic-network-architectures==0.4.4
 nibabel==5.4.2
 SimpleITK==2.5.6
-matplotlib==3.11.1
 scipy==1.18.0
 scikit-learn==1.9.0
-wandb==0.28.1
-PyYAML==6.0.3
 pytest==9.1.1

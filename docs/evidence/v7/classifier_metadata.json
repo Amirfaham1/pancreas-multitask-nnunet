@@ -1,0 +1,11 @@
+{
+  "family": "LinearDiscriminantAnalysis(solver=lsqr, shrinkage=ledoit_wolf)",
+  "tuned_hyperparameters": "none - shrinkage estimated analytically from training data",
+  "features": "encoder stage-1 (64) + stage-2 (128) global-average-pooled, 8-mirror averaged, padded to (2,4,4)",
+  "dimensions": 192,
+  "training_cases": 252,
+  "validation_macro_f1": 0.7346469622331692,
+  "train_oof_macro_f1_10seeds": 0.738,
+  "permuted_label_control": 0.331,
+  "sha256": "a369bd2619ff793e8deed2ffdf969910ade159b775a04db6a21d09898a74fb29"
+}

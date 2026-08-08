@@ -1,0 +1,80 @@
+{
+  "validation": {
+    "cases": 36,
+    "macro_f1": 0.7346469622331692,
+    "accuracy": 0.7222222222222222,
+    "whole_pancreas_dice_mean": 0.9201613425333345,
+    "lesion_dice_mean": 0.6196700866042736,
+    "confusion_matrix": [
+      [
+        6,
+        2,
+        1
+      ],
+      [
+        0,
+        10,
+        5
+      ],
+      [
+        0,
+        2,
+        10
+      ]
+    ],
+    "per_class_report": {
+      "0": {
+        "precision": 1.0,
+        "recall": 0.6666666666666666,
+        "f1-score": 0.8,
+        "support": 9.0
+      },
+      "1": {
+        "precision": 0.7142857142857143,
+        "recall": 0.6666666666666666,
+        "f1-score": 0.6896551724137931,
+        "support": 15.0
+      },
+      "2": {
+        "precision": 0.625,
+        "recall": 0.8333333333333334,
+        "f1-score": 0.7142857142857143,
+        "support": 12.0
+      },
+      "accuracy": 0.7222222222222222,
+      "macro avg": {
+        "precision": 0.7797619047619048,
+        "recall": 0.7222222222222222,
+        "f1-score": 0.7346469622331692,
+        "support": 36.0
+      },
+      "weighted avg": {
+        "precision": 0.7559523809523809,
+        "recall": 0.7222222222222222,
+        "f1-score": 0.7254515599343185,
+        "support": 36.0
+      }
+    }
+  },
+  "gates": {
+    "whole_pancreas_dice_ge_0.91": true,
+    "lesion_dice_ge_0.31": true,
+    "macro_f1_ge_0.70": true,
+    "macro_f1_ge_0.60": true
+  },
+  "test": {
+    "cases": 72,
+    "subtype_counts": [
+      14,
+      36,
+      22
+    ],
+    "archive": "Amirfaham_Fallahpour_results.zip"
+  },
+  "classifier": {
+    "family": "linear_discriminant_analysis",
+    "shrinkage": "ledoit_wolf_analytic_no_tuned_hyperparameter",
+    "features": "encoder_stage1_64_plus_stage2_128_gap_mirror_averaged",
+    "dimensions": 192
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "study": "train-only refit for reduced-scale shallow inference",
+  "encoder_updated": false,
+  "classifier_fit_rows": 252,
+  "validation_rows_used_in_fit": 0,
+  "selection_data": "validation only",
+  "selection_rule": "smallest spatial scale with macro-F1 >= 0.7",
+  "view_index": 6,
+  "mirror_axes": [
+    2,
+    3
+  ],
+  "train_inventory_sha256": "c6cb49dcb93f5e90b1ee6861e9dd6f46247ff9cde538e84bc8a809162182f4ed",
+  "elapsed_seconds": 178.46101880003698,
+  "results": {
+    "0.25": {
+      "macro_f1": 0.46365007541478126,
+      "confusion_matrix": [
+        [
+          3,
+          3,
+          3
+        ],
+        [
+          1,
+          9,
+          5
+        ],
+        [
+          0,
+          7,
+          5
+        ]
+      ],
+      "model_file": "classifier_view6_scale0.25.joblib"
+    },
+    "0.375": {
+      "macro_f1": 0.4500843348091925,
+      "confusion_matrix": [
+        [
+          3,
+          2,
+          4
+        ],
+        [
+          3,
+          9,
+          3
+        ],
+        [
+          2,
+          5,
+          5
+        ]
+      ],
+      "model_file": "classifier_view6_scale0.375.joblib"
+    },
+    "0.5": {
+      "macro_f1": 0.4425925925925926,
+      "confusion_matrix": [
+        [
+          4,
+          2,
+          3
+        ],
+        [
+          4,
+          7,
+          4
+        ],
+        [
+          1,
+          6,
+          5
+        ]
+      ],
+      "model_file": "classifier_view6_scale0.5.joblib"
+    },
+    "0.625": {
+      "macro_f1": 0.5142639206712433,
+      "confusion_matrix": [
+        [
+          6,
+          2,
+          1
+        ],
+        [
+          4,
+          9,
+          2
+        ],
+        [
+          4,
+          4,
+          4
+        ]
+      ],
+      "model_file": "classifier_view6_scale0.625.joblib"
+    }
+  },
+  "selected_scale": null,
+  "selected_model_file": null
+}

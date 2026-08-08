@@ -15,6 +15,7 @@ __pycache__/
 
 # Experiment outputs and credentials
 /artifacts/
+/Delieverable/
 /outputs/
 /delivery/
 /evaluation/
@@ -41,6 +42,7 @@ Thumbs.db
 .vscode/
 .idea/
 /collab.ipynb
+/docs/INTERVIEW_PREP.md
 
 # Generated report files
 /report/build/

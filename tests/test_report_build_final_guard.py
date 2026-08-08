@@ -65,12 +65,16 @@ def test_final_build_rejects_unresolved_report_markers(
     assert expected in (result.stdout + result.stderr)
 
 
-def test_current_report_cannot_build_final_while_v5_tokens_remain(tmp_path: Path) -> None:
+def test_current_report_passes_all_final_source_guards(tmp_path: Path) -> None:
     result = _run_final_guard(
         tmp_path,
         (REPO_ROOT / "report" / "report.md").read_text(encoding="utf-8"),
     )
 
+    # The dummy executable must eventually fail, but only after the source guard
+    # accepts the now-final report.
+    combined = result.stdout + result.stderr
     assert result.returncode != 0
-    assert "unresolved v5 result token" in (result.stdout + result.stderr)
-
+    assert "unresolved v5 result token" not in combined
+    assert "TODO/TBD/PLACEHOLDER" not in combined
+    assert "DRAFT warning" not in combined

@@ -1,4 +1,7 @@
 * text=auto
+/configs/*.json text eol=lf
+# Consumed ledgers are retained byte-for-byte because their hashes are evidence.
+/configs/*run_consumed*.json -text !eol
 *.sh text eol=lf
 *.ps1 text eol=crlf
 *.png binary

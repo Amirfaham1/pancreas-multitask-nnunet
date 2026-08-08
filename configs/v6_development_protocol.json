@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_any_eligible_v6_training_or_validation_attempt",
+  "frozen_at_utc": "2026-08-06T18:51:09.0614373Z",
+  "deadline": {
+    "timezone": "America/Toronto",
+    "submission_due_local": "2026-08-07T12:00:00-04:00",
+    "predictive_iteration_stop_local": "2026-08-07T09:00:00-04:00",
+    "finalization_reserve_hours": 3
+  },
+  "v5_parent": {
+    "git_tag": "v5-evidence-final",
+    "git_commit": "e8b54793f14b4a3f68841ac0948e68ceeb2784cf",
+    "official_gate_sha256": "6efb7d9cfb745ecffc06cd5c981ab360b980dfb5d2a49b18537d1aab236c3df7",
+    "neural_bundle_sha256": "6e4ed210bc23cd7c7bfe02c46816dd8461c0be84108d4f9d2a36f1409b6df09d",
+    "immutable": true,
+    "official_metrics": {
+      "whole_pancreas_dice": 0.9201611779378113,
+      "lesion_dice": 0.6196623932885514,
+      "classification_macro_f1": 0.5254150702426564
+    }
+  },
+  "assignment": {
+    "readme_sha256": "b0fdaeba285ffaf01860c85c908e48bc67ca1c133a99e4a189eb130dc2f019b1",
+    "validation_may_monitor_and_debug": true,
+    "validation_may_train_or_fit_parameters": false,
+    "external_data_or_pretrained_weights_allowed": false,
+    "required_model": "nnUNetv2_3d_ResEnc_M_shared_encoder_segmentation_and_classification_heads"
+  },
+  "split": {
+    "manifest_sha256": "ed54740107c5cd1da4ccbe2ababc0786db270fe50f2547b416b3a2315445988c",
+    "training_cases": 252,
+    "training_class_counts": [62, 106, 84],
+    "validation_cases": 36,
+    "validation_class_counts": [9, 15, 12],
+    "test_cases": 72,
+    "training_allowlist_required": true,
+    "identifiers_or_paths_as_features": false,
+    "test_feedback_for_training": false
+  },
+  "known_pre_protocol_v6_diagnostics": [
+    {
+      "type": "validation_probability_additive_offset_grid",
+      "base_macro_f1": 0.5254150702426564,
+      "best_exploratory_macro_f1": 0.6396618357487923,
+      "eligible_as_final_rule": false
+    },
+    {
+      "type": "previously_locked_train_only_classical_feature_search",
+      "eligible_as_primary_assignment_model": false
+    }
+  ],
+  "targets": {
+    "whole_pancreas_dice_minimum": 0.91,
+    "lesion_dice_minimum": 0.31,
+    "classification_macro_f1_minimum": 0.70,
+    "complete_inference_runtime_reduction_minimum": 0.10
+  },
+  "development": {
+    "output_root": "D:\\MLQuizWork\\phd_upgrade_v6",
+    "maximum_validation_attempts": 4,
+    "maximum_speed_variants": 3,
+    "every_attempt_locked_before_training": true,
+    "every_validation_prediction_set_hashed_before_evaluation": true,
+    "all_attempts_recorded_in_exposure_registry": true,
+    "class_correction_methods_may_not_be_doubled": true,
+    "validation_fitted_offsets_or_case_specific_rules": false,
+    "test_inference_before_final_selection": false
+  },
+  "candidate_ladder": [
+    "regularized_coordinate_aware_multiscale_lesion_case_head",
+    "minimal_terminal_encoder_finetune_with_segmentation_guard",
+    "single_alternative_imbalance_treatment_if_minority_recall_is_limiting",
+    "train_only_cross_fitted_ensemble_or_decision_rule"
+  ],
+  "selection": {
+    "replacement_requires_strict_macro_f1_improvement_over_v5": true,
+    "segmentation_gates_required": true,
+    "primary": "higher_supplied_validation_macro_f1",
+    "tie_band": 0.01,
+    "tie_breakers": [
+      "higher_train_only_oof_macro_f1",
+      "higher_minimum_class_recall",
+      "lower_complete_runtime",
+      "lower_parameter_count"
+    ]
+  },
+  "stopping": [
+    "all_metric_gates_met",
+    "four_validation_attempts_consumed",
+    "two_consecutive_validation_improvements_below_0.01",
+    "train_only_evidence_does_not_support_another_candidate",
+    "predictive_iteration_deadline_reached"
+  ],
+  "claim_boundary": {
+    "validation_is_adaptively_reused": true,
+    "validation_is_not_an_independent_test": true,
+    "best_means_best_within_disclosed_bounded_v6_process": true,
+    "global_or_clinical_optimality_claim": false
+  }
+}

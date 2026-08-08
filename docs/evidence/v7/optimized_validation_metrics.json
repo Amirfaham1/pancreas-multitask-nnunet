@@ -1,0 +1,19 @@
+{
+  "implementation": "stage-1 view-6 classifier with asynchronous CPU execution and half-resident segmentation weights",
+  "validation_cases": 36,
+  "reference_masks_snapped_to_exact_integer_labels": 24,
+  "whole_pancreas_dice_mean": 0.9201569021436445,
+  "whole_pancreas_dice_std": 0.03527814140280484,
+  "lesion_dice_mean": 0.6196343544844362,
+  "lesion_dice_std": 0.316191505431868,
+  "macro_f1": 0.7445103205972771,
+  "confusion_matrix": [
+    [6, 2, 1],
+    [0, 13, 2],
+    [1, 3, 8]
+  ],
+  "classifier_sha256": "bbdb0fc79b35cfc81400550ad558636be6c15663f623b230813ddcb46264d0df",
+  "validation_rows_used_to_fit_classifier": 0,
+  "segmentation_tta_enabled": true,
+  "sliding_window_step": 0.5
+}

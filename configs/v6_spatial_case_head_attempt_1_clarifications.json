@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_implementation_of_previously_underspecified_training_details",
+  "frozen_at_utc": "2026-08-06T19:03:19.8668866Z",
+  "parent_lock": {
+    "path": "configs/v6_spatial_case_head_attempt_1.json",
+    "sha256": "260dd55f9d3bd49e4d60cf472eaa6f7716e0119ba68bb4d56ba664bb2abf621a",
+    "git_commit": "4c6adb75f0856cdd5c67095060f874c49514118c"
+  },
+  "reason": "Freeze deterministic implementation conventions that the parent architecture lock named but did not fully define. This clarification changes no candidate, data boundary, metric gate, or validation policy.",
+  "robust_scaler": {
+    "fit_device_and_dtype": "cpu_float64",
+    "quantiles": [0.25, 0.5, 0.75],
+    "quantile_interpolation": "linear",
+    "center": "median_q0.50",
+    "scale": "q0.75_minus_q0.25",
+    "scale_floor": 0.000001,
+    "post_transform_clip": [-5.0, 5.0],
+    "stored_buffer_dtype": "float32",
+    "fit_scope": "inner_or_outer_training_partition_only"
+  },
+  "inner_split": {
+    "implementation": "sklearn.model_selection.StratifiedShuffleSplit",
+    "n_splits": 1,
+    "test_size": 0.2,
+    "random_state_formula": "repeat_seed+1000*fold_index+77",
+    "identifiers_used_for_split": false
+  },
+  "learning_rate_schedule": {
+    "epoch_indices": "zero_based",
+    "warmup_epochs": [0, 1, 2, 3, 4],
+    "warmup_multipliers": [0.2, 0.4, 0.6, 0.8, 1.0],
+    "cosine_epochs": "5_through_maximum_epoch_minus_1",
+    "cosine_first_multiplier": "one",
+    "cosine_final_multiplier": "zero_at_last_epoch"
+  },
+  "selection_ties": {
+    "epoch": ["higher_macro_f1", "lower_nll", "earlier_epoch"],
+    "candidate_within_0.01": ["prefer_v6_spatial_residual_without_morphology", "lower_nll"],
+    "macro_f1_labels": [0, 1, 2],
+    "zero_division": 0
+  },
+  "head_input_ownership": {
+    "case_lesion_mass": "computed_and_audited_by_extractor",
+    "normalized_cell_coordinates": "computed_and_audited_by_extractor",
+    "head_behavior": "validate_and_consume_without_rederiving_extractor_geometry"
+  },
+  "final_epoch_rounding": "round_half_up_for_positive_epoch_counts"
+}

@@ -1,0 +1,75 @@
+{
+  "checks": {
+    "classification_matches_final_results": true,
+    "classifier_hash_verified": true,
+    "classifier_predictions_reproduced": true,
+    "lesion_dice_matches_final_results": true,
+    "submission_contract_valid": true,
+    "whole_dice_matches_final_results": true
+  },
+  "classification": {
+    "accuracy": 0.7222222222222222,
+    "case_order_sha256": "c442fb64cd4fe229a198b496ea3fb7b80fb21baeadff282c034a678bb69fca8f",
+    "classifier_hash_matches_metadata": true,
+    "classifier_sha256": "a369bd2619ff793e8deed2ffdf969910ade159b775a04db6a21d09898a74fb29",
+    "confusion_matrix": [
+      [
+        6,
+        2,
+        1
+      ],
+      [
+        0,
+        10,
+        5
+      ],
+      [
+        0,
+        2,
+        10
+      ]
+    ],
+    "dimensions": 192,
+    "macro_f1": 0.7346469622331692,
+    "oof_macro_f1_10_seeds": [
+      0.7413701716027297,
+      0.7184303350970017,
+      0.7213252414214283,
+      0.7105045784952327,
+      0.7302356902356902,
+      0.7586318758991212,
+      0.7803543318779886,
+      0.720895358927052,
+      0.7379841351410804,
+      0.7604024552469474
+    ],
+    "oof_macro_f1_mean": 0.7380134173944273,
+    "oof_macro_f1_sd": 0.02121947467597756,
+    "refit_matches_saved_predictions": true,
+    "training_cases": 252,
+    "validation_cases": 36
+  },
+  "schema_version": 1,
+  "segmentation": {
+    "cases": 36,
+    "lesion_dice_mean": 0.6196700866042736,
+    "lesion_dice_min": 0.0,
+    "lesion_dice_sd": 0.32067469888716904,
+    "references_requiring_integer_snap": 24,
+    "whole_pancreas_dice_mean": 0.9201613425333345,
+    "whole_pancreas_dice_min": 0.7935054175042872,
+    "whole_pancreas_dice_sd": 0.03577972168702823
+  },
+  "source": {
+    "archive_sha256": "b4fe60dcdb2e6236f43bf462cd3bc120254f09b28ea5e0c6a029de2b5b0c149d",
+    "deliverable_directory": "deliverable"
+  },
+  "speed": null,
+  "status": "verified",
+  "submission": {
+    "archive_sha256": "de28e81c9ee2ded2703f3e2578ece87f1c53269e77d79083b4cd86b10a56ab76",
+    "csv_row_count": 72,
+    "mask_count": 72,
+    "valid": true
+  }
+}

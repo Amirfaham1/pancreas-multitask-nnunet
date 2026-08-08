@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_candidate_implementation_or_candidate_timing",
+  "frozen_at_utc": "2026-08-06T18:53:02.2808616Z",
+  "protocol": {
+    "path": "configs/v6_development_protocol.json",
+    "sha256": "fc442f18cb59efbe5d2ff021dccf7b3cde1b7becf7c6737a2754ce8a2cb441fe",
+    "git_commit": "c2f47fc6d746c897ab7ecca58dac7b7927c6f151"
+  },
+  "candidate_id": "v6_adaptive_whole_volume_v1",
+  "hypothesis": "The supplied cropped ROIs can be inferred as one stride-compatible variable-size volume, eliminating overlapping sliding-window computation while retaining all eight mirror views and the original tile step setting. The segmentation and classification head will be validated because InstanceNorm makes the outputs non-equivalent to tiled inference.",
+  "method_credit": {
+    "disable_tta": false,
+    "increase_tile_step_size": false,
+    "credited_method": "single_pass_stride_padded_whole_roi_inference"
+  },
+  "input_transform": {
+    "source": "unchanged_nnunet_preprocessed_case_tensor",
+    "minimum_shape": [64, 128, 192],
+    "cumulative_encoder_stride": [16, 32, 32],
+    "target_shape_rule": "ceil(elementwise_max(original_shape,minimum_shape)/stride)*stride",
+    "padding": "symmetric_constant_zero_via_pad_nd_image",
+    "output_crop": "exact_inverse_padding_slice"
+  },
+  "network_execution": {
+    "checkpoint_initially_unchanged_for_conformance": "checkpoint_classification_rescue.pth",
+    "network": "nnUNetv2_3d_fullres_ResEnc_M",
+    "mirror_views": 8,
+    "mirror_axes": [0, 1, 2],
+    "autocast_cuda_float16": true,
+    "network_forwards_per_case": 8,
+    "sliding_window_tiles_per_case": 1,
+    "gaussian_stitching_required": false,
+    "oom_fallback_to_sliding_window": false,
+    "perform_everything_on_device": false
+  },
+  "feature_contract": {
+    "stage3_grid": [4, 4, 6],
+    "prediction_map_channels": ["lesion_probability", "whole_pancreas_probability"],
+    "case_bag_tiles": 1,
+    "train_and_inference_extraction_must_match": true,
+    "v5_head_probabilities_are_diagnostic_only_under_the_new_distribution": true
+  },
+  "preexisting_header_only_estimate": {
+    "validation_sliding_tiles": 92,
+    "validation_whole_volume_patch_equivalents": 47.43,
+    "test_sliding_tiles": 212,
+    "test_whole_volume_patch_equivalents": 99.10,
+    "test_convolution_volume_reduction_estimate": 0.533,
+    "used_candidate_runtime_measurements": false
+  },
+  "train_only_smoke": {
+    "selection_rule": "three smallest image-content hashes within each existing sliding-tile group 1,2,4,8",
+    "case_ids_used_only_for_loading_not_as_model_features": true,
+    "cases": [
+      "quiz_1_087",
+      "quiz_2_277",
+      "quiz_1_115",
+      "quiz_1_439",
+      "quiz_2_395",
+      "quiz_1_025",
+      "quiz_1_297",
+      "quiz_2_134",
+      "quiz_1_036",
+      "quiz_2_508",
+      "quiz_1_510",
+      "quiz_1_255"
+    ],
+    "required": {
+      "cases_completed": 12,
+      "oom_or_cpu_fallback_count": 0,
+      "whole_pancreas_dice_minimum": 0.91,
+      "lesion_dice_minimum": 0.31,
+      "mean_whole_pancreas_dice_drop_vs_sliding_maximum": 0.02,
+      "mean_lesion_dice_drop_vs_sliding_maximum": 0.05,
+      "complete_runtime_reduction_vs_matched_sliding_minimum": 0.20
+    }
+  },
+  "validation_gate": {
+    "consumes_one_v6_validation_attempt": true,
+    "predictions_hashed_before_reference_evaluation": true,
+    "whole_pancreas_dice_minimum": 0.91,
+    "lesion_dice_minimum": 0.31,
+    "classification_rule_must_be_trained_on_matching_whole_volume_features": true,
+    "classification_macro_f1_minimum_for_phd_metric_gate": 0.70
+  },
+  "final_speed_gate": {
+    "comparator_primary": "literal_installed_nnunetv2_2.8.1_stock_cli_defaults",
+    "comparator_secondary": "matched_deterministic_stock_diagnostic",
+    "fresh_process_abba": true,
+    "same_72_test_inputs": true,
+    "complete_pipeline_runtime": true,
+    "runtime_reduction_vs_primary_minimum": 0.10,
+    "same_tta_and_tile_step": true,
+    "geometry_dtype_and_label_domain_must_pass": true
+  },
+  "failure_policy": {
+    "any_oom_or_shape_failure": "reject_without_fallback_credit",
+    "train_smoke_gate_failure": "do_not_consume_validation",
+    "validation_segmentation_gate_failure": "reject_candidate",
+    "speed_gate_failure": "do_not_claim_10_percent_improvement"
+  }
+}
