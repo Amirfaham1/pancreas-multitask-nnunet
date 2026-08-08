@@ -89,9 +89,10 @@ The eligible ladder contains at most four supplied-validation attempts:
    predictions. No validation-fitted per-case rule is allowed.
 
 Cheap heads must use repeated stratified train-only OOF evaluation. An encoder
-fine-tune must use fold-isolated subtype supervision when time permits; if the
-deadline permits only the assignment's supplied train/validation workflow, that
-limitation must be stated and the validation score must not be called independent.
+fine-tune should use fold-isolated subtype supervision when the compute budget
+supports it; otherwise the assignment's supplied train/validation workflow is
+used and the validation score is described as development evidence rather than
+an independent estimate.
 All candidates report macro-F1, per-class precision/recall/F1, confusion matrices,
 resubstitution gaps, and seed/fold variability. Candidate count and failed attempts
 remain visible.

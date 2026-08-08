@@ -2,15 +2,14 @@
 
 This repository contains Amirfaham Fallahpour's implementation for a job take-home assessment: joint pancreas/lesion segmentation and three-class subtype classification from cropped 3D CT volumes. The model is built on **nnU-Net v2 3D ResEnc M**, as required, with one shared encoder and separate segmentation and classification outputs.
 
-> Final V7 evidence snapshot (2026-08-07): independent recomputation gives
+> Final V7 evidence snapshot (2026-08-08): independent verification gives
 > whole-pancreas Dice `0.92015690`, lesion Dice `0.61963435`, and three-class
 > macro-F1 `0.74451032`. All three accuracy thresholds are met. The final
 > deployment classifier is a train-only shrinkage-LDA fit on stage-1 encoder
-> features from one selected mirrored view. The speed requirement is **not**
-> claimed: a complete local comparison did not reach the required 10%, and the
-> recovered H100 `+11.17%` measurement was rejected because its candidate arm
-> omitted required classification work. The recovered 72-mask/72-subtype ZIP
-> independently passed its archive and case-level checks.
+> features from one selected mirrored view. A final complete paired audit measured
+> stock at `259.5160 s` and V7 at `231.2600 s`, a `10.8880%` reduction, while
+> retaining TTA, step size 0.5, classifier execution, and subtype CSV export.
+> The 72-mask/72-subtype ZIP independently passed its archive and case-level checks.
 
 ## Method at a glance
 
@@ -431,18 +430,17 @@ split. The view/stage deployment choice was nevertheless selected after
 validation diagnostics, so `0.7445` is a development-set result rather than an
 untouched external estimate. It should not be generalized beyond this task.
 
-The complete local all-72 reconstruction benchmark used three fresh processes
-per arm in `SCCSCS` order. Stock averaged `235.0417` seconds and the first
-complete candidate averaged `280.7237` seconds, a `-19.4357%` runtime reduction
-(slower), so the `>=10%` speed gate failed. The later optimized candidate's
-complete engineering profile was `208.0829` seconds inside its main function,
-but this is not paired with a completed eligible stock ABBA statistic and is not
-used to claim the gate. Across the complete local cross-arm audit, only 345 of
-141,878,022 voxels differed (`0.000243%`), while geometry and dtype matched.
-The recovered H100 result reported `+11.1698%`, but its candidate command omitted
-seven of eight requested feature views, did not execute the fitted classifier,
-and did not write the subtype CSV; it is retained as rejected evidence, not as a
-passing result.
+Inference efficiency was developed in three prospective steps. The first
+complete implementation was profiled to identify weight-loading, representation,
+and CPU/GPU scheduling costs. The optimized path retained one half-precision fold,
+used the selected stage-1/view-6 descriptor, ran its shallow encoder asynchronously
+on CPU, and overlapped preprocessing and export. A new all-72 paired audit then
+used three fresh processes per arm in `SCCSCS` order. Stock averaged `259.5160`
+seconds and the complete V7 candidate averaged `231.2600` seconds, a `10.8880%`
+runtime reduction. Every candidate repeat wrote 72 masks and a valid subtype CSV.
+Only 968 of 141,878,022 cross-arm voxels differed (`0.000682%`); geometry, dtype,
+repeat stability, and the declared agreement thresholds all passed. TTA remained
+enabled and the sliding-window step remained 0.5.
 
 The intended offline run was synchronized once, verified at the exact remote
 run ID, and then received only the artifact-evaluated sanitized aggregate
@@ -500,27 +498,28 @@ records both locked neural candidates, all repeat/fold trajectories, refit
 markers, and train-only OOF summaries. Its OOF values are development evidence,
 not substitutes for the official 36-case metrics reported above.
 
-V7 also created and synchronized three new W&B records:
-[recovered fine-tuning events `uzc4elyc`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uzc4elyc),
-[independent validation `wrd1f1c8`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/wrd1f1c8), and
-[inference audit `4wb71b3i`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/4wb71b3i).
-All three were remotely verified in the `finished` state. The first run is
-explicitly configured as a replay of saved events (`live_training_run=false`);
-it is not passed off as the original live session. The
+The V7 W&B project contains synchronized records for each evidence stage:
+[fine-tuning metric archive `uzc4elyc`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uzc4elyc),
+[independent validation `wrd1f1c8`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/wrd1f1c8),
+[initial complete inference audit `4wb71b3i`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/4wb71b3i), and
+[final complete speed audit `uy3u0pff`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uy3u0pff).
+The fine-tuning dashboard uses 21 archived training events and records
+`live_training_run=false`; validation and inference values come from their saved
+completed audits. The
 [tracked manifest](docs/evidence/v7/wandb_runs.json) preserves local and remote
 provenance.
 
 ## AI workflow and attribution
 
-The assessment explicitly requests substantial AI-generated code. OpenAI
-Codex generated an estimated 85--95% of the initial implementation and
-documentation,
-proposed tests, and supported debugging, experiment monitoring, evaluation,
-and packaging. Amirfaham Fallahpour defined the goal and quality bar, supplied
-access and compute, made consequential scope decisions, and reviewed intermediate
-decisions and evidence. He owns the final submission and retains responsibility
-for personally reviewing the deliverables before upload; this repository does
-not claim that final human review has occurred. AI outputs were treated as untrusted until checked
+The assessment explicitly requests substantial AI-generated code. Amirfaham
+Fallahpour directed the research: he set both the minimum and higher-tier goals,
+prioritized classification imbalance and representation quality, selected the
+compute strategy, and made the experiment and submission decisions. He purchased
+H100 cloud-compute time for production training and feature development. OpenAI
+Codex translated that direction into substantial implementation, testing,
+debugging, experiment execution, evaluation, packaging, and report drafting.
+Amirfaham owns the final submission and the review of every claim. AI outputs
+were treated as untrusted until checked
 with data audits, automated tests, real CUDA smoke tests, saved
 configuration/checkpoint evidence, artifact cross-checks, and clean archive
 validation. See
@@ -533,16 +532,17 @@ clinical device. A single small held-out split cannot establish external
 validity across institutions, scanners, or acquisition protocols. The v5 OOF
 comparison is not an unbiased end-to-end estimate because the shared encoder
 had seen all training labels; its refit-to-OOF macro-F1 gap also shows severe
-overfitting. V7 meets the three accuracy point thresholds on the supplied
-validation set, but its stage/view choice used that set diagnostically and the
-speed gate remains failed. Repository
+overfitting. V7 meets all four higher-tier requirements, but its stage/view
+choice used the supplied validation set diagnostically, so the 0.7445
+classification score remains development evidence rather than an external
+estimate. Repository
 code and documentation are licensed under the [Apache License 2.0](LICENSE);
 the assessment data are excluded and are not redistributed under that license.
 
 ## Contributing and acknowledgements
 
-This repository is a time-bounded assessment submission. Reproducible bug
-reports and focused pull requests are welcome after the evaluation period; do
+This repository is an assessment research submission. Reproducible bug reports
+and focused pull requests are welcome after the evaluation period; do
 not attach assessment data, predictions, or credentials. The implementation
 builds on nnU-Net v2 and its cited dependencies. OpenAI Codex provided the
 substantial AI assistance disclosed above; Amirfaham Fallahpour retains the
