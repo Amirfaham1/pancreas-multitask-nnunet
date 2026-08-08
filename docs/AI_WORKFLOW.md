@@ -121,6 +121,31 @@ In the strict all-72 ABBA benchmark, installed stock nnU-Net averaged
 was 18.8011% slower, so the speed gate failed even though the exact-output
 equivalence gate passed.
 
+V7 began from the checkpoint and artifacts Amirfaham produced on replacement
+GPU hardware. Because the original development environment was not connected
+to this repository or W&B, the finalization work re-executed verifiable steps
+from the saved artifacts. It did not invent an earlier commit timeline or
+represent reconstructed history as live logging. Codex inspected the recovered
+archive, independently recomputed metrics, implemented frozen-stage probes and
+the optimized inference path, ran positive and negative experiments, and wrote
+tests and documentation. Amirfaham directed the outcome and quality bar,
+provided the trained artifact and compute, reviews the explanations, and owns
+the submission decision.
+
+The selected V7 classifier is a shrinkage-LDA fit on 252 train-only stage-1
+feature rows from mirror view 6. Independent validation reached whole-pancreas
+Dice `0.92015690`, lesion Dice `0.61963435`, and macro-F1 `0.74451032`.
+Validation informed the stage/view deployment choice, which is disclosed. A
+complete local speed reconstruction failed the 10% gate. The recovered H100
+`+11.17%` number was also rejected after code inspection showed that its
+candidate arm omitted required classifier execution and CSV output.
+
+Three new W&B offline records preserve the reconstructed evidence: `uzc4elyc`
+is explicitly a replay of saved training events, `wrd1f1c8` records independent
+validation, and `4wb71b3i` records the negative speed audit. They are genuine
+offline runs awaiting authentication and are not described as historical live
+runs or public URLs.
+
 ### 5. Human review at consequential boundaries
 
 Amirfaham is asked to participate where AI cannot or should not act alone:

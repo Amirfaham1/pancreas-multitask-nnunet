@@ -531,6 +531,55 @@ The prediction-directory and extracted-archive validators both passed: 72 masks,
 valid `{0,1,2}` labels, matching geometry, and zero issues. The flat-root ZIP
 contains exactly 73 files (72 masks plus `subtype_results.csv`).
 
+## 2026-08-07 — V7 artifact reconstruction and shallow-feature deployment
+
+Status: **ACCURACY GATES MET; SPEED GATE NOT MET**
+
+Amirfaham completed V7 training on replacement GPU hardware and supplied the
+resulting deliverable archive. The archive was extracted outside Git, hashed,
+and inspected before its claims were adopted. Independent verification
+reproduced whole-pancreas Dice `0.92016134`, lesion Dice `0.61967009`, and
+macro-F1 `0.73464696`; it also validated the 72-mask/72-row test ZIP. The
+recovered H100 `+11.1698%` speed result was rejected because its candidate arm
+omitted seven of eight classifier views, classifier execution, and CSV output.
+
+The reconstructed iteration then proceeded through real current commits and
+saved evidence. A V6 morphology-cache overflow was fixed; guarded shallow-tap
+fine-tuning and stage diagnostics were added; complete-output inference audits
+were implemented; and the archive metrics were independently recomputed.
+Frozen probes indicated that subtype information was stronger in shallow
+features. View-budget diagnostics selected stage 1, mirror view 6, and a
+train-only shrinkage-LDA refit. The final classifier was fitted on 252 training
+rows and zero validation rows. Its SHA-256 is
+`bbdb0fc79b35cfc81400550ad558636be6c15663f623b230813ddcb46264d0df`.
+
+Independent V7 validation produced:
+
+- whole-pancreas Dice `0.9201569021` (SD `0.0352781414`);
+- lesion Dice `0.6196343545` (SD `0.3161915054`);
+- macro-F1 `0.7445103206`; and
+- confusion matrix `[[6,2,1],[0,13,2],[1,3,8]]`.
+
+All three accuracy point thresholds pass. The validation split informed the
+stage/view deployment choice, so this is disclosed as a development-set result.
+Spatial scales 0.25, 0.375, 0.5, and 0.625 all reduced macro-F1 and were
+rejected. Tile/TTA batching, process-based classification, and `torch.compile`
+were also measured and rejected on this RTX 4060 environment. The retained
+engineering path uses stage-1/view-6 CPU classification, resident half weights,
+one resident fold, and overlapped preprocessing/export while preserving TTA and
+step size 0.5.
+
+The first complete reconstructed three-repeat-per-arm local benchmark recorded
+stock `235.0417` seconds and candidate `280.7237` seconds, or `-19.4357%`.
+The optimized candidate later profiled at `208.0829` seconds for all 72 cases,
+but no completed eligible paired ABBA audit established a 10% improvement.
+Accordingly, no speed pass is claimed.
+
+Three real W&B offline runs were created: recovered-history replay `uzc4elyc`,
+independent validation `wrd1f1c8`, and inference audit `4wb71b3i`. The replay
+run explicitly records that it is not a live historical training session.
+Exact sync commands are tracked in `docs/evidence/v7/wandb_runs.json`.
+
 ## AI collaboration record
 
 The assessment explicitly asks for more than 50% AI-generated code. OpenAI

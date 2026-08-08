@@ -2,24 +2,25 @@
 
 This repository contains Amirfaham Fallahpour's implementation for a job take-home assessment: joint pancreas/lesion segmentation and three-class subtype classification from cropped 3D CT volumes. The model is built on **nnU-Net v2 3D ResEnc M**, as required, with one shared encoder and separate segmentation and classification outputs.
 
-> Completed evidence snapshot (2026-08-06): the immutable baseline was followed
-> by a separately locked, train-only comparison of two neural case heads. The
-> selected two-query cross-attention MIL head improved official validation
-> macro-F1 from `0.46399341` to `0.52541507`, so it passed the predeclared
-> replacement rule. Official whole-pancreas Dice was `0.92016118` and lesion
-> Dice was `0.61966239`. The final 72-case test ZIP passed every archive and
-> case-level check. The classification and strict speed thresholds were not
-> met, and the repository suite passes at least 416 tests.
+> Final V7 evidence snapshot (2026-08-07): independent recomputation gives
+> whole-pancreas Dice `0.92015690`, lesion Dice `0.61963435`, and three-class
+> macro-F1 `0.74451032`. All three accuracy thresholds are met. The final
+> deployment classifier is a train-only shrinkage-LDA fit on stage-1 encoder
+> features from one selected mirrored view. The speed requirement is **not**
+> claimed: a complete local comparison did not reach the required 10%, and the
+> recovered H100 `+11.17%` measurement was rejected because its candidate arm
+> omitted required classification work. The recovered 72-mask/72-subtype ZIP
+> independently passed its archive and case-level checks.
 
 ## Method at a glance
 
 - **Backbone:** nnU-Net v2.8.1 `ResidualEncoderUNet`, ResEnc M plan.
-- **Parameters:** the historical joint model has 102,764,274 unique learned parameters (102,268,079 in the nnU-Net segmentation backbone and 496,195 in its original classification path). The selected frozen-feature v5 case head has 101,391 parameters.
+- **Parameters:** the historical joint model has 102,764,274 unique learned parameters (102,268,079 in the nnU-Net segmentation backbone and 496,195 in its original classification path). V7 freezes that checkpoint and fits a small shrinkage-LDA classifier on 64 global stage-1 features from all 252 training cases.
 - **Segmentation output:** background, pancreas (`1`), and lesion (`2`) through the native decoder with deep supervision during training.
-- **Classification output:** the baseline branch summarizes the 320-channel bottleneck with global-average and learned-query attention pooling. The selected v5 head instead applies two-query, four-head cross-attention to frozen stage-3 tokens from at most three model-predicted-lesion-ranked tiles, then combines that result with a projected 646-value case summary.
+- **Classification output:** the baseline branch summarizes the 320-channel bottleneck with global-average and learned-query attention pooling. Diagnostic probes showed that subtype information was stronger in shallow encoder activations, so V7 globally averages the 64-channel stage-1 map from mirror view 6 (axes 2 and 3) and applies a train-only shrinkage-LDA classifier.
 - **Joint loss:** the historical joint run used native nnU-Net Dice + cross-entropy segmentation loss plus `0.5 ×` class-weighted, label-smoothed classification cross-entropy. V5 froze the encoder and decoder and trained only small case heads with label-smoothed, unweighted cross-entropy.
 - **Imbalance controls:** the baseline used inverse-frequency class weights `[1.35484, 0.79245, 1.0]`, 50% foreground oversampling, and a 0.25 reliability weight for lesion-free subtype crops. V5 used deterministic class-balanced case sampling without simultaneous class weighting.
-- **Inference:** explicit local aggregation across mirror views, spatial tiles, and folds. Segmentation logits follow nnU-Net's geometry-restoring exporter; classification probabilities are averaged separately and never spatially resampled.
+- **Inference:** segmentation retains nnU-Net mirroring and step size 0.5. V7 keeps the selected fold resident, stores weights in half precision, overlaps CPU feature classification with GPU segmentation, and uses the standard geometry-restoring exporter.
 
 No external dataset or public pretrained weight is used. Validation cases never
 contribute gradients. The baseline did use the fixed validation split for
@@ -409,33 +410,31 @@ The target decision uses the unrounded point estimate. Dice dispersion is the
 sample standard deviation across 36 cases; intervals are deterministic
 2,000-sample case-bootstrap percentile 95% confidence intervals.
 
-| Metric | Undergraduate target | Higher-tier target | Locked v5 result | Decision |
+| Metric | Undergraduate target | Higher-tier target | Selected V7 result | Decision |
 |---|---:|---:|---:|---:|
-| Whole-pancreas Dice | >= 0.90 | >= 0.91 | mean `0.9201611779`, SD `0.0357812215`, CI `[0.9078978688, 0.9308171263]` | **Both met** |
-| Lesion Dice | >= 0.27 | >= 0.31 | mean `0.6196623933`, SD `0.3206780089`, CI `[0.5148076710, 0.7165386879]` | **Both met** |
-| Three-class macro-F1 | >= 0.60 | >= 0.70 | `0.5254150702`, CI `[0.3583611739, 0.6735718120]` | **Neither met** |
+| Whole-pancreas Dice | >= 0.90 | >= 0.91 | mean `0.9201569021`, SD `0.0352781414` | **Both met** |
+| Lesion Dice | >= 0.27 | >= 0.31 | mean `0.6196343545`, SD `0.3161915054` | **Both met** |
+| Three-class macro-F1 | >= 0.60 | >= 0.70 | `0.7445103206` | **Both met** |
 
-Classification accuracy was `0.5277777778` (95% CI
-`[0.3611111111, 0.6944444444]`), macro precision `0.5283224401`, and macro
-recall `0.5462962963`. With rows as references and columns as predictions, the
-confusion matrix was `[[5, 2, 2], [4, 5, 6], [0, 3, 9]]`. Per-class
-precision/recall/F1 for subtypes 0, 1, and 2 were respectively
-`0.5555555556/0.5555555556/0.5555555556`,
-`0.5/0.3333333333/0.4`, and
-`0.5294117647/0.75/0.6206896552`. Subtype-1 recall was only
-`0.3333333333`. The official macro-F1 improved strictly over
-the immutable baseline (`0.5254150702 > 0.4639934052`), so the locked
-replacement gate selected v5. It still missed both requested classification
-thresholds; no model-level claim is inferred from the confidence interval.
+The V7 confusion matrix, with rows as reference classes and columns as
+predictions, is `[[6, 2, 1], [0, 13, 2], [1, 3, 8]]`. No validation row was
+used to fit the LDA parameters; all 252 fitting rows came from the training
+split. The view/stage deployment choice was nevertheless selected after
+validation diagnostics, so `0.7445` is a development-set result rather than an
+untouched external estimate. It should not be generalized beyond this task.
 
-The separate strict all-72 speed benchmark used ABBA order with two complete
-process runs per arm. Installed stock nnU-Net averaged `236.7340` seconds and
-the selected candidate averaged `281.2425` seconds. The reported runtime
-reduction was `-18.8011%`: the candidate was 18.8011% slower, so the required
-`>=10%` speedup was rejected. The output-equivalence audit nevertheless passed:
-all compared masks matched exactly in label values, geometry, and dtype. This
-is a valid negative speed result on the measured RTX 4060 Laptop GPU, not a
-hardware-general performance claim.
+The complete local all-72 reconstruction benchmark used three fresh processes
+per arm in `SCCSCS` order. Stock averaged `235.0417` seconds and the first
+complete candidate averaged `280.7237` seconds, a `-19.4357%` runtime reduction
+(slower), so the `>=10%` speed gate failed. The later optimized candidate's
+complete engineering profile was `208.0829` seconds inside its main function,
+but this is not paired with a completed eligible stock ABBA statistic and is not
+used to claim the gate. Across the complete local cross-arm audit, only 345 of
+141,878,022 voxels differed (`0.000243%`), while geometry and dtype matched.
+The recovered H100 result reported `+11.1698%`, but its candidate command omitted
+seven of eight requested feature views, did not execute the fitted classifier,
+and did not write the subtype CSV; it is retained as rejected evidence, not as a
+passing result.
 
 The intended offline run was synchronized once, verified at the exact remote
 run ID, and then received only the artifact-evaluated sanitized aggregate
@@ -493,6 +492,14 @@ records both locked neural candidates, all repeat/fold trajectories, refit
 markers, and train-only OOF summaries. Its OOF values are development evidence,
 not substitutes for the official 36-case metrics reported above.
 
+V7 also created three new W&B records with real run IDs: `uzc4elyc` for the
+recovered fine-tuning events, `wrd1f1c8` for independent validation, and
+`4wb71b3i` for the inference audit. They are currently offline because this
+machine has no W&B API credential. The first run is explicitly configured as a
+replay of saved events (`live_training_run=false`); it is not passed off as the
+original live session. [The tracked manifest](docs/evidence/v7/wandb_runs.json)
+contains the exact `wandb sync` command for each immutable local run directory.
+
 ## AI workflow and attribution
 
 The assessment explicitly requests substantial AI-generated code. OpenAI
@@ -516,7 +523,9 @@ clinical device. A single small held-out split cannot establish external
 validity across institutions, scanners, or acquisition protocols. The v5 OOF
 comparison is not an unbiased end-to-end estimate because the shared encoder
 had seen all training labels; its refit-to-OOF macro-F1 gap also shows severe
-overfitting. The official macro-F1 and runtime gates were missed. Repository
+overfitting. V7 meets the three accuracy point thresholds on the supplied
+validation set, but its stage/view choice used that set diagnostically and the
+speed gate remains failed. Repository
 code and documentation are licensed under the [Apache License 2.0](LICENSE);
 the assessment data are excluded and are not redistributed under that license.
 
