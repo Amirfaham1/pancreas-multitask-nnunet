@@ -51,6 +51,6 @@ interview-preparation notes.
 - Selected V7 result archive SHA-256:
   `80bd08578878a80fa43789259ad9e45f1b99979f1834428a5ad0bf8b7c13462e`;
   subtype counts `[15, 35, 22]`.
-- W&B evidence: three real runs synchronized and remotely verified as
-  `finished`; the fine-tuning dashboard is identified as an archive of saved
-  training events in `docs/evidence/v7/wandb_runs.json`.
+- W&B evidence: four real runs remotely verified as `finished`, including the
+  final complete speed audit `uy3u0pff`; the fine-tuning dashboard is identified
+  as an archive of saved training events in `docs/evidence/v7/wandb_runs.json`.

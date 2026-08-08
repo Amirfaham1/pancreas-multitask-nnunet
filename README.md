@@ -500,8 +500,9 @@ not substitutes for the official 36-case metrics reported above.
 
 The V7 W&B project contains synchronized records for each evidence stage:
 [fine-tuning metric archive `uzc4elyc`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uzc4elyc),
-[independent validation `wrd1f1c8`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/wrd1f1c8), and
-[initial complete inference audit `4wb71b3i`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/4wb71b3i).
+[independent validation `wrd1f1c8`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/wrd1f1c8),
+[initial complete inference audit `4wb71b3i`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/4wb71b3i), and
+[final complete speed audit `uy3u0pff`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uy3u0pff).
 The fine-tuning dashboard uses 21 archived training events and records
 `live_training_run=false`; validation and inference values come from their saved
 completed audits. The

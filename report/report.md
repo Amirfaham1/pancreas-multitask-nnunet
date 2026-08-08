@@ -29,7 +29,7 @@ keywords:
 
 **Public repository:** [github.com/Amirfaham1/pancreas-multitask-nnunet](https://github.com/Amirfaham1/pancreas-multitask-nnunet)
 
-**Weights & Biases:** [joint baseline `hrs05iyx`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx), [v5 train-only experiment `u03yz7ds`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/u03yz7ds), [V7 fine-tuning metric archive `uzc4elyc`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uzc4elyc), [V7 independent validation `wrd1f1c8`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/wrd1f1c8), and [V7 initial inference audit `4wb71b3i`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/4wb71b3i)
+**Weights & Biases:** [joint baseline `hrs05iyx`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/hrs05iyx), [v5 train-only experiment `u03yz7ds`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-amirfaham-fallahpour/runs/u03yz7ds), [V7 fine-tuning metric archive `uzc4elyc`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uzc4elyc), [V7 independent validation `wrd1f1c8`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/wrd1f1c8), [V7 initial inference audit `4wb71b3i`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/4wb71b3i), and [V7 final speed audit `uy3u0pff`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uy3u0pff)
 
 **Evaluated V7 code commit:** \artifacthash{9b25aa66f1db53851b5509949366b0735542ab27}
 
@@ -720,9 +720,11 @@ The V7 W&B project organizes the experiment evidence. Run
 [`uzc4elyc`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uzc4elyc)
 contains 21 archived fine-tuning events and records `live_training_run=false`.
 Run `wrd1f1c8` records independent final validation. Run `4wb71b3i` records the
-initial complete inference audit that motivated the retained optimizations. The
-tracked `docs/evidence/v7/wandb_runs.json` manifest records the exact run IDs,
-evidence sources, and remote `finished` states.
+initial complete inference audit that motivated the retained optimizations. Run
+[`uy3u0pff`](https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uy3u0pff)
+records the final complete 10.8880% speed pass. The tracked
+`docs/evidence/v7/wandb_runs.json` manifest records the exact run IDs, evidence
+sources, and remote `finished` states.
 
 # Discussion
 
@@ -960,7 +962,7 @@ Independent verification gives whole-pancreas Dice 0.92015690, lesion Dice 0.619
 - **AI workflow:** `docs/AI_WORKFLOW.md`, 85–95% initial-content estimate, and Section 8.
 - **V7 accuracy gates:** `docs/evidence/v7/optimized_validation_metrics.json`; whole Dice 0.92015690, lesion Dice 0.61963435, and macro-F1 0.74451032 all meet their point thresholds.
 - **V7 speed decision:** met. `docs/evidence/v7/inference_speed_audit.json` records the complete final comparison, classifier/CSV inclusion, and output audit.
-- **V7 W&B evidence:** synchronized, remotely verified runs `uzc4elyc`, `wrd1f1c8`, and `4wb71b3i`, with provenance labels and URLs in `docs/evidence/v7/wandb_runs.json`.
+- **V7 W&B evidence:** remotely verified runs `uzc4elyc`, `wrd1f1c8`, `4wb71b3i`, and final speed audit `uy3u0pff`, with evidence labels and URLs in `docs/evidence/v7/wandb_runs.json`.
 - **Public source:** [GitHub repository](https://github.com/Amirfaham1/pancreas-multitask-nnunet), final V7 branch prepared 2026-08-08.
 - **72 masks and subtype CSV:** selected V7 ZIP SHA-256 \artifacthash{80bd08578878a80fa43789259ad9e45f1b99979f1834428a5ad0bf8b7c13462e}, valid with 72 masks, 72 subtype rows, and zero issues; tracked aggregate audit `docs/evidence/v7/selected_test_package.json`.
 

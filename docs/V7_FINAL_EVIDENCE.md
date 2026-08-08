@@ -67,8 +67,9 @@ All were synchronized and remotely verified:
 | `uzc4elyc` | Fine-tuning curves | Archive of 21 saved training events (`live_training_run=false`) |
 | `wrd1f1c8` | Independent validation | Metrics computed from saved validation outputs |
 | `4wb71b3i` | Initial complete inference audit | Baseline for the optimization iteration |
+| `uy3u0pff` | Final complete speed audit | Eligible 10.8880% paired pass with output checks |
 
-All three are remotely verified in the `finished` state. URLs and the retained
+All four are remotely verified in the `finished` state. URLs and the retained
 local sync provenance are in `docs/evidence/v7/wandb_runs.json`.
 
 ## Attribution

@@ -581,9 +581,10 @@ checks passed, so the final speed gate passed without disabling TTA or changing
 step size 0.5.
 
 W&B records track the fine-tuning metric archive (`uzc4elyc`), independent
-validation (`wrd1f1c8`), and initial complete inference audit (`4wb71b3i`). The
-fine-tuning dashboard contains 21 saved training events and records
-`live_training_run=false`. Exact URLs and evidence sources are tracked in
+validation (`wrd1f1c8`), initial complete inference audit (`4wb71b3i`), and
+final eligible speed audit (`uy3u0pff`). The fine-tuning dashboard contains 21
+saved training events and records `live_training_run=false`. All four runs are
+remotely verified as `finished`; exact URLs and evidence sources are tracked in
 `docs/evidence/v7/wandb_runs.json`.
 
 ## AI collaboration record

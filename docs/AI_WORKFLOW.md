@@ -137,8 +137,9 @@ subtype CSV export. Output-equivalence and repeatability checks also passed.
 
 The W&B records organize the evidence stages: `uzc4elyc` contains the 21 saved
 fine-tuning events (`live_training_run=false`), `wrd1f1c8` records independent
-validation, and `4wb71b3i` records the initial complete inference audit. The
-records are synchronized and remotely verified in the `finished` state.
+validation, `4wb71b3i` records the initial complete inference audit, and
+`uy3u0pff` records the final eligible speed pass. All four are remotely verified
+in the `finished` state.
 
 ### 5. Human review at consequential boundaries
 

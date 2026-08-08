@@ -2,8 +2,8 @@
   "schema_version": 1,
   "project": "pancreas-multitask-v7",
   "entity": "amirfahamfallahpour1379-university-of-toronto",
-  "mode": "offline",
-  "sync_status": "synced_and_remote_verified",
+  "mode": "mixed",
+  "sync_status": "all_runs_remote_verified",
   "git_commit_at_logging": "9b25aa66f1db53851b5509949366b0735542ab27",
   "evidence_note": "The fine-tuning dashboard is populated from 21 archived training events (live_training_run=false); validation and inference records come from their completed audits.",
   "runs": [
@@ -36,6 +36,18 @@
       "remote_state": "finished",
       "run_directory": "artifacts/wandb_v7/wandb/offline-run-20260807_224657-4wb71b3i/files",
       "sync_command": "wandb sync artifacts/wandb_v7/wandb/offline-run-20260807_224657-4wb71b3i"
+    },
+    {
+      "kind": "final_complete_speed_audit",
+      "run_id": "uy3u0pff",
+      "run_name": "v7-final-complete-speed-audit",
+      "mode": "online",
+      "git_commit_at_logging": "41b03b8",
+      "url": "https://wandb.ai/amirfahamfallahpour1379-university-of-toronto/pancreas-multitask-v7/runs/uy3u0pff",
+      "remote_state": "finished",
+      "run_directory": "wandb/run-20260808_002901-uy3u0pff/files",
+      "speed_gate_passed": true,
+      "runtime_reduction_percent": 10.887960665229242
     }
   ]
 }
