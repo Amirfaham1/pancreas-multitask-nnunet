@@ -40,20 +40,20 @@ from pancreas_multitask.neural_case_training import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-POST_LOCK_INFERENCE_EXTRACTOR_SHA256 = (
-    "eef3eb3a8a530ea7dfa31e5eba438e8f32fae0053006ef0c44577b0230707926"
+CURRENT_V7_INFERENCE_EXTRACTOR_SHA256 = (
+    "5cf41e7b9c2933d5985a7af21f52392d46ec39723cc551dddbf2051f187b65fd"
 )
 STOCK_EXPORT_CONFORMANCE_LOCK_SHA256 = (
     "bf309ae1ff8475b0985089ac1db2ef6b35383be34d7eeda0e9c6e63478f19503"
 )
 
 
-def test_historical_training_hash_and_locked_export_only_divergence_are_explicit() -> None:
-    """Keep training provenance immutable while binding current inference code.
+def test_historical_training_hash_and_current_v7_divergence_are_explicit() -> None:
+    """Keep training provenance immutable while binding current V7 inference code.
 
-    The prospectively locked stock-export repair changed only the terminal
-    logit dtype passed to resampling. It did not change any cached neural-bag
-    value, so the fitted bundle must retain its historical extractor binding.
+    The historical v5 bundle retains its original extractor hash. V7 adds a
+    separate shallow-feature deployment path, so current inference source is
+    expected to have a distinct, explicitly bound implementation hash.
     """
 
     script = ROOT / "scripts" / "extract_train_case_features.py"
@@ -65,8 +65,8 @@ def test_historical_training_hash_and_locked_export_only_divergence_are_explicit
     assert EXTRACTOR_IMPLEMENTATION_SHA256 == (
         "68956b493c8004b86558841d830e633827f12b0c9a099d3d42f8ddab8de2c46f"
     )
-    assert module._implementation_sha256() == POST_LOCK_INFERENCE_EXTRACTOR_SHA256
-    assert POST_LOCK_INFERENCE_EXTRACTOR_SHA256 != EXTRACTOR_IMPLEMENTATION_SHA256
+    assert module._implementation_sha256() == CURRENT_V7_INFERENCE_EXTRACTOR_SHA256
+    assert CURRENT_V7_INFERENCE_EXTRACTOR_SHA256 != EXTRACTOR_IMPLEMENTATION_SHA256
     assert file_sha256(ROOT / "configs" / "inference_speed_benchmark.json") == SPEED_LOCK_SHA256
     assert file_sha256(
         ROOT / "configs" / "inference_stock_export_conformance_v1.json"

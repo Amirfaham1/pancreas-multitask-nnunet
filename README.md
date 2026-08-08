@@ -67,7 +67,6 @@ tests/                             Data, network, trainer, metric, inference tes
 report/report.md                   Artifact-driven technical-report source
 docs/AI_WORKFLOW.md                AI attribution and verification workflow
 docs/classification_head_rescue.md Predeclared conditional rescue protocol
-docs/INTERVIEW_PREP.md             Post-submission technical review notes
 ```
 
 ## Environment

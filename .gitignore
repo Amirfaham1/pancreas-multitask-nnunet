@@ -42,6 +42,7 @@ Thumbs.db
 .vscode/
 .idea/
 /collab.ipynb
+/docs/INTERVIEW_PREP.md
 
 # Generated report files
 /report/build/
