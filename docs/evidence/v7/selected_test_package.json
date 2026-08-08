@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "status": "valid",
+  "archive_name": "Amirfaham_Fallahpour_results.zip",
+  "archive_sha256": "80bd08578878a80fa43789259ad9e45f1b99979f1834428a5ad0bf8b7c13462e",
+  "archive_members": 73,
+  "mask_count": 72,
+  "csv_row_count": 72,
+  "flat_root_layout": true,
+  "geometry_matches_test_images": true,
+  "integer_mask_labels_valid": true,
+  "classifier": "selected_stage1_view6_scale1_shrinkage_lda",
+  "classifier_sha256": "bbdb0fc79b35cfc81400550ad558636be6c15663f623b230813ddcb46264d0df",
+  "classification_stages": [1],
+  "classification_view_indices": [6],
+  "test_subtype_counts": [15, 35, 22],
+  "source_profile": "artifacts/v7_candidate_stage1_half_full/runtime_profile.json",
+  "excluded_working_file": "runtime_profile.json"
+}
