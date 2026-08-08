@@ -12,9 +12,9 @@ Protocol, fixed before running:
 * The **mean** is the decision statistic, declared in advance; per-run times and
   spread are reported alongside so a near-threshold result cannot hide behind a
   lucky minimum.
-* Stock runs at its shipped defaults (`-npp 3 -nps 3`, step 0.5, mirroring on).
-  Our arm uses the same worker counts, so the comparison is not simply bought with
-  extra CPU processes.
+* Stock runs at its algorithmic defaults (`-npp 3 -nps 3`, step 0.5, mirroring
+  on). Both arms use the repository's deterministic CUDA conformance policy by
+  default, so kernel-selection noise is controlled symmetrically.
 * TTA is **not** disabled and the sliding-window step size is **not** increased in
   either arm -- the assignment rules those out explicitly.
 
@@ -48,6 +48,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--python", type=Path, required=True)
     parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument(
+        "--deterministic-backend",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Apply the same deterministic CUDA conformance policy to both arms.",
+    )
     parser.add_argument("--order", default="SCCSCS",
                         help="S=stock, C=candidate; default is ABBA-balanced")
     parser.add_argument(
@@ -194,6 +200,11 @@ def main() -> int:
             "--arm", label, "--input", source, "--model", model,
             "--output", str(target),
         ]
+        command.append(
+            "--deterministic-backend"
+            if args.deterministic_backend
+            else "--no-deterministic-backend"
+        )
         if label == "candidate":
             command.extend(["--classifier", classifier])
             if args.classifier_sha256:
@@ -265,6 +276,7 @@ def main() -> int:
     summary = {
         "runs": runs,
         "order": order,
+        "deterministic_backend": args.deterministic_backend,
         "stock_seconds": stock, "candidate_seconds": candidate,
         "stock_mean": stock_mean, "candidate_mean": candidate_mean,
         "stock_spread_pct": 100 * (max(stock) - min(stock)) / stock_mean,
