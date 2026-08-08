@@ -737,6 +737,14 @@ The post-baseline v5 experiment is stronger as a model-selection attempt because
 
 Several design properties are defensible independently of the final score. First, the mandatory ResEnc M architecture and nnU-Net preprocessing were preserved. Second, the original classifier receives the deepest shared representation and contributes gradients to that encoder. Third, v5 uses production-matched features and only model-predicted lesion maps, avoiding a reference-mask feature that would be unavailable at inference. Fourth, saved-prediction evaluation prevents patch monitoring or train-only OOF values from being relabelled as official full-volume results.
 
+V7 changes the interpretation of the final classifier result. Its gain supports
+the hypothesis that shallow encoder texture is more useful for this subtype task
+than the validation-selected deep representations used earlier. The final LDA
+has far less capacity than the neural v5 head and uses no reference mask or test
+label. It does not prove that stage 1 is universally best: the stage and mirror
+view were chosen with this validation split, so a new outer split would be
+needed to estimate the complete selection procedure without optimism.
+
 ## Expected and observed failure mechanisms
 
 Lesion Dice is intrinsically more volatile than whole-pancreas Dice because a fixed boundary displacement occupies a larger fraction of a small target, and a complete miss produces zero. Whole-pancreas evaluation merges labels 1 and 2, so a lesion voxel predicted as ordinary pancreas remains correct for the whole-organ metric. A strong whole-pancreas result therefore cannot establish lesion delineation.
@@ -760,6 +768,7 @@ The principal limitations are:
 9. **Representation constraints.** V5 retains only three ranked tiles, depends on predicted lesion mass, and uses attention without positional encoding.
 10. **Limited metric scope.** Dice and macro-F1 do not measure probability reliability, boundary distance, or clinical utility.
 11. **Substantial AI assistance.** AI accelerated implementation but creates semantic-error and verification risk, especially under a deadline.
+12. **V7 deployment selection.** Although the LDA parameters use training rows only, validation diagnostics selected the stage, mirror view, and spatial scale. The 0.7445 score therefore estimates the selected development configuration, not an untouched end-to-end procedure.
 
 No probability-reliability study, clinical reader study, prospective evaluation, or safety analysis was performed. The output is not suitable for diagnosis or patient care.
 
